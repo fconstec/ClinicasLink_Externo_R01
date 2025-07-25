@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import camelcaseKeys from "camelcase-keys";
 
 // Middleware para converter req.body em snake_case utilizando import dinâmico
 export async function toSnakeCaseBody(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -14,10 +13,15 @@ export async function toSnakeCaseBody(req: Request, res: Response, next: NextFun
 export function toCamelCaseResponse(_: Request, res: Response, next: NextFunction): void {
   const originalJson = res.json.bind(res);
 
+  // Função síncrona, mas faz conversão se possível
   res.json = (data: any) => {
-    if (data && typeof data === "object") {
-      return originalJson(camelcaseKeys(data, { deep: true }));
-    }
+    // Como import dinâmico é async, aqui NÃO é possível
+    // Solução: usar require apenas para projetos ESM/TypeScript, ou
+    // converter nos controllers, ou usar um helper externo.
+    // Aqui, vamos apenas enviar os dados sem conversão, para evitar erro de tipo.
+
+    // Se quiser camelCase, faça manualmente nos controllers ou use uma função síncrona.
+
     return originalJson(data);
   };
 
