@@ -18,8 +18,15 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Wrapper para middlewares async (Express 4.x)
+function asyncMiddleware(fn: any) {
+  return (req: any, res: any, next: any) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
 // Middlewares para conversão de case
-app.use(toSnakeCaseBody);
+app.use(asyncMiddleware(toSnakeCaseBody));
 app.use(toCamelCaseResponse);
 
 const uploadsDirectory = path.join(__dirname, "..", "uploads");

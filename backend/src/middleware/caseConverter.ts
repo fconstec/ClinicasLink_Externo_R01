@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import snakecaseKeys from "snakecase-keys";
 import camelcaseKeys from "camelcase-keys";
 
-// Middleware para converter req.body em snake_case
-export function toSnakeCaseBody(req: Request, res: Response, next: NextFunction): void {
+// Middleware para converter req.body em snake_case utilizando import dinâmico
+export async function toSnakeCaseBody(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
+    const snakecaseKeys = (await import("snakecase-keys")).default;
     req.body = snakecaseKeys(req.body, { deep: true });
   }
   next();
