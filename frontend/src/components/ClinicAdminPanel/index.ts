@@ -1,0 +1,10 @@
+export { default as DashboardTab } from './DashboardTab';
+export { default as CalendarTab } from './CalendarTab';
+export { default as AppointmentsTab } from './AppointmentsTab';
+export { default as PatientsTab } from './PatientsTab';
+export { default as ProfessionalsTab } from './ProfessionalsTab';
+export { default as ServicesTab } from './ServicesTab';
+export { default as StockTab } from './StockTab';
+export { default as SettingsTab } from './SettingsTab';
+export { default as SideMenu } from './SideMenu';
+export { default } from './ClinicAdminPanel';
