@@ -8,6 +8,7 @@ import NewClinicsCarousel from "./NewClinicsCarousel";
 import HowItWorksSection from "./HowItWorksSection";
 import { Clinic } from "./types";
 import "../../styles/carousel.css";
+import { API_BASE_URL } from '../api/apiBase';
 
 const HomePage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -22,7 +23,7 @@ const HomePage: React.FC = () => {
   // Carrega as clínicas para os carrosséis ao montar
   useEffect(() => {
     setLoadingClinics(true);
-    fetch("http://localhost:3001/api/clinics")
+    fetch(`${API_BASE_URL}/clinics`)
       .then(res => res.json())
       .then(data => setClinics(Array.isArray(data) ? data : []))
       .catch(() => setClinics([]))

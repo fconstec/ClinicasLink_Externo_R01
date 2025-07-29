@@ -11,6 +11,7 @@ import { getErrorMessage } from "./scheduleHelpers";
 import type { ScheduleModalInfo } from "./types";
 import type { Service, Appointment, Professional } from "../../components/ClinicAdminPanel_Managers/types";
 import { mapAppointmentToCalendarEvent } from "src/utils/calendarEventMapper";
+import { API_BASE_URL } from "../../components/api/apiBase";
 
 const PROFESSIONAL_COLORS = [
   "#0ea5e9", "#e11d48", "#22c55e", "#f59e42", "#a855f7",
@@ -107,8 +108,8 @@ const CalendarPage: React.FC = () => {
       // @ts-ignore
       const clinicId = localStorage.getItem("clinic_id");
       const url = eventId
-        ? `http://localhost:3001/api/appointments/${eventId}?clinicId=${clinicId}`
-        : `http://localhost:3001/api/appointments?clinicId=${clinicId}`;
+        ? `${API_BASE_URL}/appointments/${eventId}?clinicId=${clinicId}`
+        : `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
       const method = eventId ? "PUT" : "POST";
 
       // LOG: Veja o endpoint e método

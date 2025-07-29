@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Header from "@/components/Header";
+import { API_BASE_URL } from "@/components/api/apiBase";
 
 type Clinic = {
   id: number;
@@ -43,7 +44,7 @@ const DeveloperPanel: React.FC = () => {
   useEffect(() => {
     setLoadingClinics(true);
     setErrorClinics(null);
-    fetch("http://localhost:3001/api/clinics")
+    fetch(`${API_BASE_URL}/clinics`)
       .then((res) => {
         if (!res.ok) throw new Error("Erro ao buscar clínicas");
         return res.json();
@@ -57,7 +58,7 @@ const DeveloperPanel: React.FC = () => {
   useEffect(() => {
     setLoadingPatients(true);
     setErrorPatients(null);
-    fetch("http://localhost:3001/api/patients")
+    fetch(`${API_BASE_URL}/patients`)
       .then((res) => {
         if (!res.ok) throw new Error("Erro ao buscar pacientes");
         return res.json();

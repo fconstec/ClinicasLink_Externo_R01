@@ -6,6 +6,7 @@ import Footer from "../components/Footer";
 import ClinicCard from "../components/ClinicCard";
 import { Clinic } from "../components/HomePage/types";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "../config/googleMapsConfig";
+import { API_BASE_URL } from "@/api/apiBase";
 
 const defaultPosition = { lat: -23.55052, lng: -46.633308 };
 const userIconUrl = "https://cdn-icons-png.flaticon.com/512/64/64113.png";
@@ -98,7 +99,7 @@ const SearchResultsPage: React.FC = () => {
     if (searchTerm) params.append("searchTerm", searchTerm);
     if (location) params.append("location", location);
     if (specialty) params.append("specialty", specialty);
-    fetch(`http://localhost:3001/api/clinics?${params.toString()}`)
+    fetch(`${API_BASE_URL}/clinics?${params.toString()}`)
       .then((res) => res.json())
       .then((data) => {
         // Debug: veja como chegam os dados

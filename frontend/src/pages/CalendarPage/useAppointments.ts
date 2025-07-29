@@ -1,8 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Appointment } from "../../components/ClinicAdminPanel_Managers/types";
 import { getClinicId } from "./scheduleHelpers";
-
-const API_APPOINTMENTS = "http://localhost:3001/api/appointments";
+import { API_BASE_URL } from "../../components/api/apiBase";
 
 export function useAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -12,7 +11,7 @@ export function useAppointments() {
     setLoading(true);
     try {
       const clinicId = getClinicId();
-      const url = `${API_APPOINTMENTS}?clinicId=${clinicId}`;
+      const url = `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(res.statusText);
       const raw = await res.json();

@@ -1,4 +1,3 @@
-//
 import React, { useState, useEffect } from 'react';
 import { useParams } from "react-router-dom";
 import Header from '../Header';
@@ -9,6 +8,7 @@ import UserProfileReviews from './UserProfileReviews';
 import UserProfileSettings from './UserProfileSettings';
 import { UserData } from './types';
 import { Appointment } from './UserProfileAppointments';
+import { API_BASE_URL } from '../api/apiBase';
 
 // Tipagem exemplo para pagamentos e avaliações
 interface Payment {
@@ -62,7 +62,7 @@ const UserProfile: React.FC = () => {
       return;
     }
 
-    fetch(`http://localhost:3001/api/patients/${id}`)
+    fetch(`${API_BASE_URL}/patients/${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Erro ao buscar perfil');
         return res.json();
@@ -88,7 +88,7 @@ const UserProfile: React.FC = () => {
     setLoadingAppointments(true);
     setErrorAppointments(null);
     if (!id) return;
-    fetch(`http://localhost:3001/api/appointments?patientId=${id}`)
+    fetch(`${API_BASE_URL}/appointments?patientId=${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Erro ao buscar agendamentos');
         return res.json();
@@ -103,7 +103,7 @@ const UserProfile: React.FC = () => {
     setLoadingPayments(true);
     setErrorPayments(null);
     if (!id) return;
-    fetch(`http://localhost:3001/api/payments?patientId=${id}`)
+    fetch(`${API_BASE_URL}/payments?patientId=${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Erro ao buscar pagamentos');
         return res.json();
@@ -118,7 +118,7 @@ const UserProfile: React.FC = () => {
     setLoadingReviews(true);
     setErrorReviews(null);
     if (!id) return;
-    fetch(`http://localhost:3001/api/reviews?patientId=${id}`)
+    fetch(`${API_BASE_URL}/reviews?patientId=${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Erro ao buscar avaliações');
         return res.json();
@@ -133,7 +133,7 @@ const UserProfile: React.FC = () => {
     if (!userData || !id) return;
     setLoading(true);
     setError(null);
-    fetch(`http://localhost:3001/api/patients/profile`, {
+    fetch(`${API_BASE_URL}/patients/profile`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)

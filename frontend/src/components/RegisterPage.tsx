@@ -4,6 +4,7 @@ import { Building2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import Header from './Header';
+import { API_BASE_URL } from '../api/apiBase';
 
 const CLINIC_ID = 1; // Troque para o ID real da clínica ou torne dinâmico!
 
@@ -57,7 +58,7 @@ const RegisterPage: React.FC = () => {
     setSuccess(false);
 
     try {
-      const response = await fetch('http://localhost:3001/api/patients', {
+      const response = await fetch(`${API_BASE_URL}/patients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

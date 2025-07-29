@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import Header from './Header';
 import { Mail, X } from 'lucide-react';
+import { API_BASE_URL } from '../api/apiBase';
 
 const SPECIALTIES_OPTIONS = [
   "Clínica Geral", "Fisioterapia", "Odontologia", "Estética", "Psicologia",
@@ -124,7 +125,7 @@ const ClinicRegisterPage: React.FC = () => {
     setSubmitting(true);
 
     try {
-      const res = await fetch('http://localhost:3001/api/clinics', {
+      const res = await fetch(`${API_BASE_URL}/clinics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,8 +146,6 @@ const ClinicRegisterPage: React.FC = () => {
 
       // Sucesso! Redireciona para o painel de configurações da clínica recém-cadastrada
       const clinic = await res.json();
-      // Veja qual campo vem com o id da clínica:
-      // Tente clinic.id, se não funcionar, use console.log(clinic) para descobrir o campo correto.
       navigate(`/admin/${clinic.id}`);
     } catch {
       alert('Erro de conexão com o servidor.');

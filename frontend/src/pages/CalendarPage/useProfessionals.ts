@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Professional } from "../../components/ClinicAdminPanel_Managers/types";
-
-const API_PROFESSIONALS = "http://localhost:3001/api/professionals";
+import { API_BASE_URL } from "../../components/api/apiBase";
 
 export function useProfessionals() {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -10,7 +9,7 @@ export function useProfessionals() {
   const fetchProfessionals = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_PROFESSIONALS);
+      const res = await fetch(`${API_BASE_URL}/professionals`);
       if (!res.ok) throw new Error("Erro ao buscar profissionais");
       const data = await res.json();
       setProfessionals(Array.isArray(data)

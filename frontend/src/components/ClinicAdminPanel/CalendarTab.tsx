@@ -5,6 +5,7 @@ import { mapAppointmentToCalendarEvent } from '@/utils/calendarEventMapper';
 import type { Professional, Service, Appointment } from '@/components/ClinicAdminPanel_Managers/types';
 import type { SubmittedFormData as ScheduleFormData } from "@/components/ScheduleForm/types";
 import type { CalendarEvent } from '@/components/SuperCalendar/types';
+import { API_BASE_URL } from '../api/apiBase';
 
 const PROFESSIONAL_CALENDAR_COLORS = [
   '#EF4444', '#F97316', '#EAB308', '#22C55E', '#0EA5E9', '#6366F1', '#EC4899',
@@ -34,8 +35,6 @@ interface CalendarTabProps {
   services: Service[];
 }
 
-const API_APPOINTMENTS = "http://localhost:3001/api/appointments";
-
 const CalendarTab: React.FC<CalendarTabProps> = ({
   professionals,
   services,
@@ -50,7 +49,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({
     setLoading(true);
     try {
       const clinicId = localStorage.getItem("clinic_id");
-      const url = `${API_APPOINTMENTS}?clinicId=${clinicId}`;
+      const url = `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
@@ -225,8 +224,8 @@ const CalendarTab: React.FC<CalendarTabProps> = ({
     try {
       const clinicId = localStorage.getItem("clinic_id");
       const url = eventId
-        ? `http://localhost:3001/api/appointments/${eventId}?clinicId=${clinicId}`
-        : `http://localhost:3001/api/appointments?clinicId=${clinicId}`;
+        ? `${API_BASE_URL}/appointments/${eventId}?clinicId=${clinicId}`
+        : `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
       const method = eventId ? "PUT" : "POST";
 
       const res = await fetch(url, {

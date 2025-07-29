@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Service } from "../../components/ClinicAdminPanel_Managers/types";
-
-const API_SERVICES = "http://localhost:3001/api/services";
+import { API_BASE_URL } from "../../components/api/apiBase";
 
 export function useServices() {
   const [services, setServices] = useState<Service[]>([]);
@@ -10,7 +9,7 @@ export function useServices() {
   const fetchServices = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_SERVICES);
+      const res = await fetch(`${API_BASE_URL}/services`);
       if (!res.ok) throw new Error("Erro ao buscar serviços");
       const data = await res.json();
       setServices(

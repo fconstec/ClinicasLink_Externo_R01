@@ -9,6 +9,7 @@ import { ClinicTabs, TabType } from './ClinicTabs';
 import { ClinicSobre } from './ClinicSobre';
 import { ClinicProfissionais } from './ClinicProfissionais';
 import { ClinicServicos } from './ClinicServicos';
+import { API_BASE_URL } from '../api/apiBase';
 
 type Professional = {
   id: string;
@@ -52,7 +53,7 @@ type Clinic = {
 const getImageUrl = (url?: string | null) => {
   if (!url) return undefined;
   if (/^https?:\/\//.test(url) || url.startsWith('blob:')) return url;
-  const backend = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3001';
+  const backend = import.meta.env?.VITE_BACKEND_URL || API_BASE_URL?.replace('/api', '') || 'http://localhost:3001';
   return `${backend}${url.startsWith('/') ? url : `/${url}`}`;
 };
 
@@ -68,7 +69,7 @@ const ClinicDetails: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`http://localhost:3001/api/clinic-settings/${id}`)
+    fetch(`${API_BASE_URL}/clinic-settings/${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Clínica não encontrada');
         return res.json();
