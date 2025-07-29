@@ -1,4 +1,10 @@
 {
+  "build": {
+    "env": {},
+    "npm": {
+      "installArgs": ["--legacy-peer-deps"]
+    }
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

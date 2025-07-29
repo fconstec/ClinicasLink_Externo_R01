@@ -1,3 +1,10 @@
+// Adicione este bloco logo no topo do arquivo:
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
@@ -172,10 +179,10 @@ const SearchResultsPage: React.FC = () => {
 
   // Renderização dos marcadores das clínicas
   useEffect(() => {
-    if (!isLoaded || !mapRef.current || !window.google?.maps?.marker?.AdvancedMarkerElement) return;
+    if (!isLoaded || !mapRef.current || !window.google?.maps?.Marker) return;
     console.log("Rendering clinic markers...", clinics);
 
-    markersRef.current.forEach(marker => marker.map = null);
+    markersRef.current.forEach(marker => marker.setMap(null));
     markersRef.current = [];
 
     clinics.forEach((clinic) => {
@@ -184,14 +191,13 @@ const SearchResultsPage: React.FC = () => {
 
       if (!latLng) return;
 
-      const { AdvancedMarkerElement } = window.google.maps.marker;
-      const marker = new AdvancedMarkerElement({
+      const marker = new window.google.maps.Marker({
         map: mapRef.current,
         position: latLng,
         title: clinic.name,
-        gmpDraggable: false,
+        draggable: false,
       });
-      marker.addListener("gmp-click", () => setSelectedClinic(clinic));
+      marker.addListener("click", () => setSelectedClinic(clinic));
       markersRef.current.push(marker);
     });
 
@@ -216,17 +222,23 @@ const SearchResultsPage: React.FC = () => {
     }
 
     return () => {
-      markersRef.current.forEach(marker => marker.map = null);
+      markersRef.current.forEach(marker => marker.setMap(null));
       markersRef.current = [];
     };
   }, [clinics, isLoaded, userPosition, mapCenter]);
 
   // Marcador do usuário
   useEffect(() => {
-    if (!isLoaded || !mapRef.current || !window.google?.maps?.marker?.AdvancedMarkerElement) return;
+    if (
+      !isLoaded ||
+      !mapRef.current ||
+      !window.google?.maps?.Marker ||
+      !window.google?.maps?.Size
+    )
+      return;
 
     if (userMarkerRef.current) {
-      userMarkerRef.current.map = null;
+      userMarkerRef.current.setMap(null);
       userMarkerRef.current = null;
     }
     if (userCircleRef.current) {
@@ -234,19 +246,14 @@ const SearchResultsPage: React.FC = () => {
       userCircleRef.current = null;
     }
     if (userPosition) {
-      const { AdvancedMarkerElement } = window.google.maps.marker;
-      userMarkerRef.current = new AdvancedMarkerElement({
+      userMarkerRef.current = new window.google.maps.Marker({
         map: mapRef.current,
         position: userPosition,
         title: "Sua localização",
-        content: (() => {
-          const img = document.createElement("img");
-          img.src = userIconUrl;
-          img.style.width = "32px";
-          img.style.height = "32px";
-          img.style.objectFit = "contain";
-          return img;
-        })(),
+        icon: {
+          url: userIconUrl,
+          scaledSize: new window.google.maps.Size(32, 32)
+        }
       });
       if (userAccuracy && window.google?.maps?.Circle) {
         userCircleRef.current = new window.google.maps.Circle({
@@ -263,7 +270,7 @@ const SearchResultsPage: React.FC = () => {
     }
     return () => {
       if (userMarkerRef.current) {
-        userMarkerRef.current.map = null;
+        userMarkerRef.current.setMap(null);
         userMarkerRef.current = null;
       }
       if (userCircleRef.current) {
