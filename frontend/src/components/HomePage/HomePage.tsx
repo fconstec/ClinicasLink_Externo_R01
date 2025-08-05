@@ -8,7 +8,7 @@ import NewClinicsCarousel from "./NewClinicsCarousel";
 import HowItWorksSection from "./HowItWorksSection";
 import { Clinic } from "./types";
 import "../../styles/carousel.css";
-import { API_BASE_URL } from '../api/apiBase';
+import { API_BASE_URL } from "../../api/apiBase";
 
 const HomePage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
