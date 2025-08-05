@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import Header from './Header';
 import { Mail, X } from 'lucide-react';
-import { API_BASE_URL } from '../api/apiBase';
+import { API_BASE_URL } from '@/api/apiBase';
 
 const SPECIALTIES_OPTIONS = [
   "Clínica Geral", "Fisioterapia", "Odontologia", "Estética", "Psicologia",
