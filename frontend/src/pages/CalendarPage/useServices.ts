@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Service } from "../../components/ClinicAdminPanel_Managers/types";
-import { API_BASE_URL } from "../../components/api/apiBase";
+import { API_BASE_URL } from "../../api/apiBase";
 
 export function useServices() {
   const [services, setServices] = useState<Service[]>([]);

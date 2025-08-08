@@ -56,7 +56,7 @@ const ClinicSpecialtiesCard: React.FC<ClinicSpecialtiesCardProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-md border border-gray-100 p-8">
       <h2 className="text-xl font-bold mb-6 border-b pb-3 flex items-center gap-2">
-        <FaUserMd className="text-[#e11d48]" /> Especialidades da Clínica
+        {FaUserMd && <FaUserMd className="text-[#e11d48]" />} Especialidades da Clínica
       </h2>
       {successMessage && (
         <div className="p-2 mb-3 text-green-800 bg-green-50 border border-green-200 rounded">

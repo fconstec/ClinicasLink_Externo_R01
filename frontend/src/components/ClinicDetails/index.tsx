@@ -9,7 +9,7 @@ import { ClinicTabs, TabType } from './ClinicTabs';
 import { ClinicSobre } from './ClinicSobre';
 import { ClinicProfissionais } from './ClinicProfissionais';
 import { ClinicServicos } from './ClinicServicos';
-import { API_BASE_URL } from '../api/apiBase';
+import { API_BASE_URL } from '../../api/apiBase';
 
 type Professional = {
   id: string;

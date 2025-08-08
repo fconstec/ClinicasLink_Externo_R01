@@ -8,7 +8,7 @@ import UserProfileReviews from './UserProfileReviews';
 import UserProfileSettings from './UserProfileSettings';
 import { UserData } from './types';
 import { Appointment } from './UserProfileAppointments';
-import { API_BASE_URL } from '../api/apiBase';
+import { API_BASE_URL } from '../../api/apiBase';
 
 // Tipagem exemplo para pagamentos e avaliações
 interface Payment {

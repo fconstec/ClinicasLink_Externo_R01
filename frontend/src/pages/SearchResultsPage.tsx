@@ -1,10 +1,3 @@
-// Adicione este bloco logo no topo do arquivo:
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
@@ -13,7 +6,13 @@ import Footer from "../components/Footer";
 import ClinicCard from "../components/ClinicCard";
 import { Clinic } from "../components/HomePage/types";
 import { GOOGLE_MAPS_LOADER_OPTIONS } from "../config/googleMapsConfig";
-import { API_BASE_URL } from "@/api/apiBase";
+import { API_BASE_URL } from "../api/apiBase";
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 const defaultPosition = { lat: -23.55052, lng: -46.633308 };
 const userIconUrl = "https://cdn-icons-png.flaticon.com/512/64/64113.png";

@@ -1,7 +1,8 @@
+//
 import { useState, useCallback } from "react";
 import type { Appointment } from "../../components/ClinicAdminPanel_Managers/types";
 import { getClinicId } from "./scheduleHelpers";
-import { API_BASE_URL } from "../../components/api/apiBase";
+import { API_BASE_URL } from "../../api/apiBase";
 
 export function useAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);

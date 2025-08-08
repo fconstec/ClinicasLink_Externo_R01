@@ -5,7 +5,7 @@ import { mapAppointmentToCalendarEvent } from '@/utils/calendarEventMapper';
 import type { Professional, Service, Appointment } from '@/components/ClinicAdminPanel_Managers/types';
 import type { SubmittedFormData as ScheduleFormData } from "@/components/ScheduleForm/types";
 import type { CalendarEvent } from '@/components/SuperCalendar/types';
-import { API_BASE_URL } from '../api/apiBase';
+import { API_BASE_URL } from '../../api/apiBase';
 
 const PROFESSIONAL_CALENDAR_COLORS = [
   '#EF4444', '#F97316', '#EAB308', '#22C55E', '#0EA5E9', '#6366F1', '#EC4899',

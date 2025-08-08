@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
 import HomePage from './components/HomePage/HomePage';
 import ClinicDetails from './components/ClinicDetails';

@@ -1,3 +1,4 @@
+//
 import React, { useState, useEffect, useMemo } from "react";
 import { SuperCalendar } from "src/components/SuperCalendar";
 import type { CalendarEvent, CalendarProfessional } from "src/components/SuperCalendar/types";
@@ -11,7 +12,7 @@ import { getErrorMessage } from "./scheduleHelpers";
 import type { ScheduleModalInfo } from "./types";
 import type { Service, Appointment, Professional } from "../../components/ClinicAdminPanel_Managers/types";
 import { mapAppointmentToCalendarEvent } from "src/utils/calendarEventMapper";
-import { API_BASE_URL } from "../../components/api/apiBase";
+import { API_BASE_URL } from "../../api/apiBase";
 
 const PROFESSIONAL_COLORS = [
   "#0ea5e9", "#e11d48", "#22c55e", "#f59e42", "#a855f7",

@@ -1,6 +1,7 @@
+//
 import { useState, useCallback } from "react";
 import type { Professional } from "../../components/ClinicAdminPanel_Managers/types";
-import { API_BASE_URL } from "../../components/api/apiBase";
+import { API_BASE_URL } from "../../api/apiBase";
 
 export function useProfessionals() {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
