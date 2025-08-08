@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import basicAuth from "./middleware/auth";
 
 import professionalsRouter from "./routes/professionals";
 import patientsRouter from "./routes/patients";
@@ -32,7 +33,13 @@ app.use(toCamelCaseResponse);
 const uploadsDirectory = path.join(__dirname, "..", "uploads");
 app.use("/uploads", express.static(uploadsDirectory));
 
-// Rotas principais
+// ---
+// Apenas a rota inicial exige autenticação
+app.get("/api", basicAuth, (_req, res) => {
+  res.send("API Clínica protegida por senha!");
+});
+
+// Demais rotas livres (sem autenticação)
 app.use("/api/professionals", professionalsRouter);
 app.use("/api/appointments", appointmentsRouter);
 app.use("/api/services", servicesRouter);
@@ -40,9 +47,5 @@ app.use("/api/stock", stockRouter);
 app.use("/api/clinic-settings", clinicSettingsRouter);
 app.use("/api/clinics", clinicsRouter);
 app.use("/api/patients", patientsRouter);
-
-app.get("/api", (_req, res) => {
-  res.send("API Clínica rodando!");
-});
 
 export default app;
