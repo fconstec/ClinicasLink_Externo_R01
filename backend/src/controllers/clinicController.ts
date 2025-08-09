@@ -121,9 +121,8 @@ export async function registerClinic(req: Request, res: Response) {
   }
 }
 
-// Listagem das clínicas (com settings ANINHADO - formato correto para o frontend do mapa!)
-// AGORA inclui address concatenado para aparecer no card do frontend
-export async function listClinics(req: Request, res: Response) {
+// Listagem das clínicas (com settings aninhado e address concatenado)
+export async function listClinics(_req: Request, res: Response) {
   try {
     const { data: clinics, error: clinicsError } = await supabase
       .from("clinics")
@@ -139,11 +138,25 @@ export async function listClinics(req: Request, res: Response) {
 
     const mergedClinics = (clinics || []).map((clinic: any) => {
       const settings = settingsMap[clinic.id] || {};
+      let specialties: any[] = [];
+      let customSpecialties: any[] = [];
+
+      try {
+        specialties = clinic.specialties ? JSON.parse(clinic.specialties) : [];
+      } catch {
+        specialties = [];
+      }
+      try {
+        customSpecialties = clinic.custom_specialties ? JSON.parse(clinic.custom_specialties) : [];
+      } catch {
+        customSpecialties = [];
+      }
+
       return {
         id: clinic.id,
         name: clinic.name,
-        specialties: clinic.specialties ? JSON.parse(clinic.specialties) : [],
-        customSpecialties: clinic.custom_specialties ? JSON.parse(clinic.custom_specialties) : [],
+        specialties,
+        customSpecialties,
         createdAt: clinic.created_at,
         featured: clinic.featured,
         isNew: clinic.isnew,

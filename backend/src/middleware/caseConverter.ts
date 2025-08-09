@@ -1,29 +1,31 @@
 import { Request, Response, NextFunction } from "express";
 
-// Middleware para converter req.body em snake_case utilizando import dinâmico
-export async function toSnakeCaseBody(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
-    const snakecaseKeys = (await import("snakecase-keys")).default;
-    req.body = snakecaseKeys(req.body, { deep: true });
-  }
-  next();
+// Import ESM sem virar require() ao compilar para CommonJS
+async function importESM<T = any>(specifier: string): Promise<T> {
+  // eslint-disable-next-line no-new-func
+  const dynamicImport = new Function("s", "return import(s);") as (s: string) => Promise<T>;
+  return dynamicImport(specifier);
 }
 
-// Middleware para converter a resposta JSON em camelCase antes de enviar ao cliente
-export function toCamelCaseResponse(_: Request, res: Response, next: NextFunction): void {
+// Converte req.body para snake_case apenas quando há body e não em GET/HEAD
+export async function toSnakeCaseBody(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (req.method === "GET" || req.method === "HEAD") return next();
+    if (!req.body || typeof req.body !== "object" || Object.keys(req.body).length === 0) return next();
+
+    const mod = await importESM<typeof import("snakecase-keys")>("snakecase-keys");
+    const snakecaseKeys = (mod as any).default ?? (mod as any);
+
+    req.body = snakecaseKeys(req.body, { deep: true });
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Mantém a resposta como está (se quiser camelCase, faça nos controllers ou implemente aqui de forma síncrona)
+export function toCamelCaseResponse(_req: Request, res: Response, next: NextFunction): void {
   const originalJson = res.json.bind(res);
-
-  // Função síncrona, mas faz conversão se possível
-  res.json = (data: any) => {
-    // Como import dinâmico é async, aqui NÃO é possível
-    // Solução: usar require apenas para projetos ESM/TypeScript, ou
-    // converter nos controllers, ou usar um helper externo.
-    // Aqui, vamos apenas enviar os dados sem conversão, para evitar erro de tipo.
-
-    // Se quiser camelCase, faça manualmente nos controllers ou use uma função síncrona.
-
-    return originalJson(data);
-  };
-
+  res.json = (data: any) => originalJson(data);
   next();
 }

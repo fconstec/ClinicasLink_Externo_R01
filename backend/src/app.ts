@@ -25,7 +25,7 @@ function asyncMiddleware(fn: any) {
   };
 }
 
-// Middlewares para conversão de case
+// Middlewares de conversão (aplicados após body parsers)
 app.use(asyncMiddleware(toSnakeCaseBody));
 app.use(toCamelCaseResponse);
 
@@ -41,8 +41,26 @@ app.use("/api/clinic-settings", clinicSettingsRouter);
 app.use("/api/clinics", clinicsRouter);
 app.use("/api/patients", patientsRouter);
 
+// Healthcheck
 app.get("/api", (_req, res) => {
   res.send("API Clínica rodando!");
+});
+
+// Error handler global (último middleware)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const cause = err?.cause || {};
+  console.error("Unhandled error:", {
+    message: err?.message,
+    stack: err?.stack,
+    cause: {
+      message: cause?.message,
+      code: cause?.code,
+      errno: cause?.errno,
+      address: cause?.address,
+      port: cause?.port,
+    },
+  });
+  res.status(500).json({ message: "Internal Server Error" });
 });
 
 export default app;
