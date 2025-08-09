@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { supabase } from "../supabaseClient";
 import { getFullClinicById } from "../services/clinicFullService";
 
-// Cadastro da clínica
+// Cadastro da clínica (inalterado, mantendo estrutura)
 export async function registerClinic(req: Request, res: Response) {
   try {
     const {
@@ -22,7 +22,7 @@ export async function registerClinic(req: Request, res: Response) {
       neighborhood,
       city,
       state,
-      cep,
+      cep
     } = req.body;
 
     if (!name || !email || !password || !specialties || specialties.length === 0) {
@@ -84,7 +84,6 @@ export async function registerClinic(req: Request, res: Response) {
     }
     if (!clinic) throw new Error("Falha ao criar clínica.");
 
-    // Criação de settings
     const { error: settingsError } = await supabase.from("clinic_settings").insert([
       {
         clinic_id: clinic.id,
@@ -115,13 +114,25 @@ export async function registerClinic(req: Request, res: Response) {
     if (settingsError) throw settingsError;
 
     res.status(201).json(clinic);
-  } catch (error) {
-    console.error("Erro ao cadastrar clínica:", error);
-    res.status(500).json({ message: "Erro ao cadastrar clínica.", error });
+  } catch (error: any) {
+    console.error("Erro ao cadastrar clínica:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      cause: {
+        code: error?.cause?.code,
+        errno: error?.cause?.errno,
+        address: error?.cause?.address,
+        port: error?.cause?.port
+      },
+      stack: error?.stack
+    });
+    res.status(500).json({ message: "Erro ao cadastrar clínica." });
   }
 }
 
-// Listagem das clínicas (com settings aninhado e address concatenado)
+// Listagem das clínicas
 export async function listClinics(_req: Request, res: Response) {
   try {
     const { data: clinics, error: clinicsError } = await supabase
@@ -141,16 +152,8 @@ export async function listClinics(_req: Request, res: Response) {
       let specialties: any[] = [];
       let customSpecialties: any[] = [];
 
-      try {
-        specialties = clinic.specialties ? JSON.parse(clinic.specialties) : [];
-      } catch {
-        specialties = [];
-      }
-      try {
-        customSpecialties = clinic.custom_specialties ? JSON.parse(clinic.custom_specialties) : [];
-      } catch {
-        customSpecialties = [];
-      }
+      try { specialties = clinic.specialties ? JSON.parse(clinic.specialties) : []; } catch { specialties = []; }
+      try { customSpecialties = clinic.custom_specialties ? JSON.parse(clinic.custom_specialties) : []; } catch { customSpecialties = []; }
 
       return {
         id: clinic.id,
@@ -162,14 +165,8 @@ export async function listClinics(_req: Request, res: Response) {
         isNew: clinic.isnew,
         email: clinic.email,
         coverImage: settings.cover_image_url || clinic.image || "",
-        address: [
-          settings.street,
-          settings.number,
-          settings.neighborhood,
-          settings.city,
-          settings.state,
-          settings.cep
-        ].filter(Boolean).join(", "),
+        address: [settings.street, settings.number, settings.neighborhood, settings.city, settings.state, settings.cep]
+          .filter(Boolean).join(", "),
         settings: {
           latitude: settings.latitude ?? null,
           longitude: settings.longitude ?? null,
@@ -189,23 +186,47 @@ export async function listClinics(_req: Request, res: Response) {
     });
 
     res.json(mergedClinics);
-  } catch (error) {
-    console.error("Erro ao buscar clínicas:", error);
-    res.status(500).json({ message: "Erro ao buscar clínicas.", error });
+  } catch (error: any) {
+    console.error("Erro ao buscar clínicas:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      cause: {
+        code: error?.cause?.code,
+        errno: error?.cause?.errno,
+        address: error?.cause?.address,
+        port: error?.cause?.port
+      },
+      stack: error?.stack
+    });
+    res.status(500).json({ message: "Erro ao buscar clínicas." });
   }
 }
 
-// Detalhes completos da clínica (agregados)
+// Detalhes completos
 export async function getClinicDetails(req: Request, res: Response) {
   const { id } = req.params;
   try {
     const clinic = await getFullClinicById(id);
-    if (!clinic || (clinic && (clinic as any).error)) {
+    if (!clinic || (clinic as any)?.error) {
       return res.status(404).json({ error: "Clínica não encontrada" });
     }
     res.json(clinic);
-  } catch (error) {
-    console.error("Erro ao buscar detalhes da clínica:", error);
-    res.status(500).json({ error: "Erro ao buscar detalhes da clínica.", details: error });
+  } catch (error: any) {
+    console.error("Erro ao buscar detalhes da clínica:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      cause: {
+        code: error?.cause?.code,
+        errno: error?.cause?.errno,
+        address: error?.cause?.address,
+        port: error?.cause?.port
+      },
+      stack: error?.stack
+    });
+    res.status(500).json({ error: "Erro ao buscar detalhes da clínica." });
   }
 }

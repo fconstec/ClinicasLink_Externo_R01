@@ -1,29 +1,55 @@
 import { Request, Response, NextFunction } from "express";
 
-// Import ESM sem virar require() ao compilar para CommonJS
-async function importESM<T = any>(specifier: string): Promise<T> {
-  // eslint-disable-next-line no-new-func
-  const dynamicImport = new Function("s", "return import(s);") as (s: string) => Promise<T>;
-  return dynamicImport(specifier);
+// Conversão simples para snake_case sem dependências ESM.
+// - Converte chaves de objetos recursivamente.
+// - Mantém arrays, Date, null, primitivos e Buffer intactos.
+// - Evita lançar exceções; em caso de erro, apenas segue adiante.
+
+function toSnake(str: string): string {
+  // handle camelCase, PascalCase e espaços/hífens
+  return str
+    .replace(/[\s\-]+/g, "_")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase();
 }
 
-// Converte req.body para snake_case apenas quando há body e não em GET/HEAD
-export async function toSnakeCaseBody(req: Request, _res: Response, next: NextFunction): Promise<void> {
+function isPlainObject(value: any): value is Record<string, any> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value.constructor === Object || Object.getPrototypeOf(value) === Object.prototype)
+  );
+}
+
+function convertDeep(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(convertDeep);
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[toSnake(k)] = convertDeep(v);
+    }
+    return out;
+  }
+  // Não converter Date, Buffer, etc.
+  return value;
+}
+
+// Converte req.body para snake_case em métodos que têm corpo.
+export function toSnakeCaseBody(req: Request, _res: Response, next: NextFunction): void {
   try {
     if (req.method === "GET" || req.method === "HEAD") return next();
-    if (!req.body || typeof req.body !== "object" || Object.keys(req.body).length === 0) return next();
-
-    const mod = await importESM<typeof import("snakecase-keys")>("snakecase-keys");
-    const snakecaseKeys = (mod as any).default ?? (mod as any);
-
-    req.body = snakecaseKeys(req.body, { deep: true });
+    if (!req.body || typeof req.body !== "object") return next();
+    req.body = convertDeep(req.body);
     next();
-  } catch (err) {
-    next(err);
+  } catch {
+    // Em caso de qualquer erro, não trava a requisição.
+    next();
   }
 }
 
-// Mantém a resposta como está (se quiser camelCase, faça nos controllers ou implemente aqui de forma síncrona)
+// Mantemos a resposta como está; camelCase pode ser tratado no controller quando necessário.
 export function toCamelCaseResponse(_req: Request, res: Response, next: NextFunction): void {
   const originalJson = res.json.bind(res);
   res.json = (data: any) => originalJson(data);
