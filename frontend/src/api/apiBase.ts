@@ -1,14 +1,14 @@
 function normalize(raw?: string) {
   if (!raw) return '';
   let v = raw.trim();
-  // remove barras finais múltiplas
+  // remove barras finais duplicadas
   v = v.replace(/\/+$/, '');
-  // se alguém colocar /api/api, colapsa para /api
-  v = v.replace(/\/api\/api(\/|$)/, '/api$1');
+  // colapsa /api/api/... para /api/...
+  v = v.replace(/(\/api)+(\/|$)/, '/api$2');
   return v;
 }
 
-// CRA expõe as variáveis em build substituindo process.env.REACT_APP_*
+// CRA substitui este valor em tempo de build
 const rawEnv =
   (typeof process !== 'undefined' &&
     process.env &&
@@ -18,8 +18,8 @@ const rawEnv =
 export const API_BASE_URL =
   normalize(rawEnv) || 'https://clinicaslinkexternor01-production.up.railway.app/api';
 
-// Aviso em desenvolvimento
+// Opcional: aviso em dev se a env original veio com /api/api
 if (process.env.NODE_ENV === 'development' && /\/api\/api/.test(rawEnv)) {
   // eslint-disable-next-line no-console
-  console.warn('[API_BASE_URL] Duplicação /api detectada na variável original:', rawEnv);
+  console.warn('[API_BASE_URL] A env original tinha duplicação /api:', rawEnv);
 }
