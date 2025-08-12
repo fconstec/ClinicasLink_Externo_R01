@@ -1,3 +1,4 @@
+//
 import { Appointment } from '../components/ClinicAdminPanel_Managers/types';
 import { API_BASE_URL } from './apiBase';
 

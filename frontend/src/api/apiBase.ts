@@ -1,22 +1,25 @@
-// Normaliza o valor para não acabar com /api/api por engano
-function normalizeBase(raw?: string) {
+function normalize(raw?: string) {
   if (!raw) return '';
-  const trimmed = raw.trim();
-  // remove barras extras no final
-  const noTrailing = trimmed.replace(/\/+$/, '');
-  return noTrailing;
+  let v = raw.trim();
+  // remove barras finais múltiplas
+  v = v.replace(/\/+$/, '');
+  // se alguém colocar /api/api, colapsa para /api
+  v = v.replace(/\/api\/api(\/|$)/, '/api$1');
+  return v;
 }
 
-const raw = normalizeBase(process.env.REACT_APP_API_URL);
+// CRA expõe as variáveis em build substituindo process.env.REACT_APP_*
+const rawEnv =
+  (typeof process !== 'undefined' &&
+    process.env &&
+    (process.env.REACT_APP_API_URL as string | undefined)) ||
+  '';
 
-// Exporte já sem barras finais
-export const API_BASE_URL = raw || 'https://clinicaslinkexternor01-production.up.railway.app/api';
+export const API_BASE_URL =
+  normalize(rawEnv) || 'https://clinicaslinkexternor01-production.up.railway.app/api';
 
-// (Opcional) Aviso no console em desenvolvimento se parecer errado
-if (
-  process.env.NODE_ENV === 'development' &&
-  /\/api\/api($|\/)/.test(API_BASE_URL)
-) {
+// Aviso em desenvolvimento
+if (process.env.NODE_ENV === 'development' && /\/api\/api/.test(rawEnv)) {
   // eslint-disable-next-line no-console
-  console.warn('[API_BASE_URL] Possível duplicação de /api detectada:', API_BASE_URL);
+  console.warn('[API_BASE_URL] Duplicação /api detectada na variável original:', rawEnv);
 }
