@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import type { PatientSearchResult } from "./types";
-import { API_BASE_URL } from "../../api/apiBase";
-
-const API_PATIENTS = `${API_BASE_URL}/api/patients`;
+import { apiUrl } from "../../api/apiBase";
 
 export function usePatientSearch(
   search: string,
@@ -33,9 +31,9 @@ export function usePatientSearch(
 
     timer = setTimeout(async () => {
       try {
-        const url = new URL(API_PATIENTS);
+        const url = new URL(apiUrl("/patients"));
         url.searchParams.set("clinicId", String(clinicId));
-        // compatibilidade com o backend: envie os três nomes de parâmetro
+        // Compatibilidade: alguns backends aceitam search, q ou name
         url.searchParams.set("search", q);
         url.searchParams.set("q", q);
         url.searchParams.set("name", q);
