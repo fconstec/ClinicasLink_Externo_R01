@@ -1,33 +1,29 @@
-// Lê a base da API de variável de ambiente (sem obrigar formato)
+// Valor vindo da env (pode vir com ou sem /api)
 const RAW = (process.env.REACT_APP_API_URL ?? "").trim();
 
-// Remove barras finais extras
-const baseNoTrailingSlash = RAW.replace(/\/+$/, "");
+// Remove barras finais
+const noTrailing = RAW.replace(/\/+$/, "");
 
-// Exporta a base crua (útil para debug)
-export const API_BASE_URL = baseNoTrailingSlash || "";
+// Remove um /api final, se houver
+const baseWithoutApi = noTrailing.replace(/\/api$/i, "");
+
+// Exporta SEM /api (compatível com `${API_BASE_URL}/api/...` já existente no projeto)
+export const API_BASE_URL = baseWithoutApi;
 
 /**
- * Monta uma URL garantindo exatamente um prefixo "/api".
+ * Constrói URL garantindo exatamente um "/api" no prefixo, independentemente de como a env veio.
  * Aceita path com ou sem "/api" e com ou sem barra inicial.
- *
- * Exemplos:
- * - apiUrl("/patients") => "<base>/api/patients"
- * - apiUrl("/api/patients") => "<base>/api/patients"
- * - base "<domínio>/api" também funciona sem duplicar.
  */
 export function apiUrl(path: string): string {
-  const base = API_BASE_URL;
-  const hasApiOnBase = /\/api$/i.test(base);
+  let p = `${path || ""}`.trim();
 
-  // Normaliza o path removendo prefixo /api se tiver
-  let p = `/${(path || "").replace(/^\/+/, "")}`;
-  if (p.toLowerCase().startsWith("/api/")) {
-    p = p.slice(4); // remove "/api"
-    if (!p.startsWith("/")) p = `/${p}`;
+  // Remove prefixo /api do path, se passaram
+  p = p.replace(/^\/+/, "");          // remove barras iniciais
+  if (p.toLowerCase().startsWith("api/")) {
+    p = p.slice(4); // remove "api/"
   }
 
-  const prefix = hasApiOnBase ? base : `${base}/api`;
-  // Evita barras duplicadas
-  return `${prefix}${p}`.replace(/([^:]\/)\/+/g, "$1");
+  const url = `${API_BASE_URL}/api/${p}`;
+  // Normaliza barras duplicadas (sem mexer no protocolo)
+  return url.replace(/([^:]\/)\/+/g, "$1");
 }
