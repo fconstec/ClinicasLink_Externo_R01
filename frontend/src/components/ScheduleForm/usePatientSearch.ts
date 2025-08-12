@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import type { PatientSearchResult } from "./types";
 import { API_BASE_URL } from "../../api/apiBase";
 
-// Siga o mesmo padrão do restante do projeto: base (domínio) + "/api/..."
 const API_PATIENTS = `${API_BASE_URL}/api/patients`;
 
 export function usePatientSearch(
@@ -23,7 +22,6 @@ export function usePatientSearch(
     if (q.length < 2 || !!patientId) {
       setPatientOptions([]);
       setShowPatientDropdown(false);
-      // sempre faça cleanup para abortar qualquer requisição anterior
       return () => {
         controller.abort();
         if (timer) clearTimeout(timer);
@@ -35,10 +33,9 @@ export function usePatientSearch(
 
     timer = setTimeout(async () => {
       try {
-        // Monta URL de forma segura e envia múltiplos nomes de parâmetro
-        // para compatibilidade com o backend (search, q, name).
         const url = new URL(API_PATIENTS);
         url.searchParams.set("clinicId", String(clinicId));
+        // compatibilidade com o backend: envie os três nomes de parâmetro
         url.searchParams.set("search", q);
         url.searchParams.set("q", q);
         url.searchParams.set("name", q);
@@ -46,10 +43,9 @@ export function usePatientSearch(
         const res = await fetch(url.toString(), { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const data = (await res.json()) as PatientSearchResult[] | unknown;
+        const data = (await res.json()) as unknown;
         setPatientOptions(Array.isArray(data) ? data : []);
       } catch (err: any) {
-        // Ignora cancelamentos durante a digitação
         if (err?.name === "AbortError" || err?.code === "ERR_CANCELED") return;
         setPatientOptions([]);
       } finally {
@@ -63,10 +59,5 @@ export function usePatientSearch(
     };
   }, [search, patientId, clinicId]);
 
-  return {
-    patientOptions,
-    loadingPatients,
-    showPatientDropdown,
-    setShowPatientDropdown,
-  };
+  return { patientOptions, loadingPatients, showPatientDropdown, setShowPatientDropdown };
 }
