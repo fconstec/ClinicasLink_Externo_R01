@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, LayoutGrid, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, LayoutGrid, User, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import { VIEW_LABELS, formatDateToInput } from "./utils";
 import CalendarDayView from "./CalendarDayView";
@@ -14,6 +14,7 @@ interface SuperCalendarProps {
   onEditEvent: (event: CalendarEvent) => void;
   onNewEvent?: (info: { date: string; professionalId?: number; time?: string; endTime?: string }) => void;
   loading?: boolean;
+  onRefresh?: () => void | Promise<void>; // <-- ADICIONADO
 }
 
 export default function SuperCalendar({
@@ -23,6 +24,7 @@ export default function SuperCalendar({
   onNewEvent,
   extraEvents = [],
   loading = false,
+  onRefresh, // <-- ADICIONADO
 }: SuperCalendarProps) {
   const [view, setView] = useState<"week" | "day" | "month">("week");
   const [selectedDay, setSelectedDay] = useState<string>(() => formatDateToInput(new Date()));
@@ -38,7 +40,6 @@ export default function SuperCalendar({
     }
   }, [professionals, selectedProfessionalId]);
 
-  // TopBar render
   const [year, month, day] = selectedDay.split('-').map(Number);
   const selectedDateObj = new Date(year, month - 1, day);
   let dateLabel = "";
@@ -79,8 +80,8 @@ export default function SuperCalendar({
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-6 px-2 py-4 rounded-xl bg-gradient-to-r from-pink-100 via-white to-sky-100 shadow">
         <div className="flex items-center gap-3">
-          <CalendarIcon className="w-8 h-8 text-pink-500 mr-2" />
-          <h2 className="text-2xl font-bold text-gray-800 tracking-tight">Calendário</h2>
+            <CalendarIcon className="w-8 h-8 text-pink-500 mr-2" />
+            <h2 className="text-2xl font-bold text-gray-800 tracking-tight">Calendário</h2>
         </div>
         {view === "week" && professionals.length > 0 && selectedProfessionalId !== undefined && (
           <div className="flex items-center gap-2">
@@ -126,6 +127,18 @@ export default function SuperCalendar({
               <span>{VIEW_LABELS[v]}</span>
             </button>
           ))}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={() => onRefresh()}
+              disabled={loading}
+              className="ml-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-pink-500 text-pink-600 bg-white hover:bg-pink-50 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-400 disabled:opacity-50"
+              title="Recarregar agendamentos"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Recarregar
+            </button>
+          )}
         </div>
       </div>
       {view === "week" && (

@@ -1,31 +1,24 @@
-import type { Appointment } from "../ClinicAdminPanel_Managers/types";
+import type { AppointmentStatus } from "@/components/ClinicAdminPanel_Managers/types";
 
-export type PatientSearchResult = {
+export interface PatientSearchResult {
   id: number;
   name: string;
   birthDate?: string;
   phone?: string;
   email?: string;
-};
-
-export type Service = {
-  id: number;
-  name: string;
-  duration: string;
-  description?: string;
-  value: string;
-};
+}
 
 export interface SubmittedFormData {
+  id?: number | string;
   patientId?: number;
   patientName: string;
   patientPhone?: string;
-  professionalId: number;
-  serviceId: number;
-  service: string; // <-- Adicione esta linha!
+  professionalId: number | string;
+  serviceId: number | string;
+  serviceName?: string; // ou 'service' se preferir manter nome antigo
   date: string;
   time: string;
-  endTime?: string; // <-- Mantido aqui!
-  status?: Appointment["status"];
-  id?: string | number;
+  endTime?: string;
+  status?: AppointmentStatus;
+  notes?: string;
 }
