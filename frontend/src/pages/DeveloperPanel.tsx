@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import { API_BASE_URL } from "../api/apiBase";
@@ -25,6 +25,20 @@ type Patient = {
 
 type TabType = "clinics" | "patients";
 
+const normalize = (u: string) => u.replace(/([^:]\/)\/+/g, "$1");
+
+async function fetchWith404Fallback<T = any>(primary: string, fallback: string, init?: RequestInit): Promise<T> {
+  let res = await fetch(normalize(primary), init);
+  if (res.status === 404) {
+    res = await fetch(normalize(fallback), init);
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Erro HTTP ${res.status} ${res.statusText}${txt ? " – " + txt : ""}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 const DeveloperPanel: React.FC = () => {
   // Estado de dados
   const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -40,91 +54,128 @@ const DeveloperPanel: React.FC = () => {
   // Aba ativa
   const [activeTab, setActiveTab] = useState<TabType>("clinics");
 
-  // Buscar clínicas
-  useEffect(() => {
+  // Funções de carregamento com fallback /api -> raiz
+  const loadClinics = useCallback(async () => {
     setLoadingClinics(true);
     setErrorClinics(null);
-    fetch(`${API_BASE_URL}/clinics`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Erro ao buscar clínicas");
-        return res.json();
-      })
-      .then((data) => setClinics(Array.isArray(data) ? data : []))
-      .catch((err) => setErrorClinics(err.message || "Erro desconhecido"))
-      .finally(() => setLoadingClinics(false));
+    try {
+      const data = await fetchWith404Fallback<Clinic[]>(
+        `${API_BASE_URL}/api/clinics`,
+        `${API_BASE_URL}/clinics`
+      );
+      setClinics(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setErrorClinics(e?.message || "Erro ao buscar clínicas");
+      setClinics([]);
+    } finally {
+      setLoadingClinics(false);
+    }
   }, []);
 
-  // Buscar pacientes
-  useEffect(() => {
+  const loadPatients = useCallback(async () => {
     setLoadingPatients(true);
     setErrorPatients(null);
-    fetch(`${API_BASE_URL}/patients`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Erro ao buscar pacientes");
-        return res.json();
-      })
-      .then((data) => setPatients(Array.isArray(data) ? data : []))
-      .catch((err) => setErrorPatients(err.message || "Erro desconhecido"))
-      .finally(() => setLoadingPatients(false));
+    try {
+      const data = await fetchWith404Fallback<Patient[]>(
+        `${API_BASE_URL}/api/patients`,
+        `${API_BASE_URL}/patients`
+      );
+      setPatients(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setErrorPatients(e?.message || "Erro ao buscar pacientes");
+      setPatients([]);
+    } finally {
+      setLoadingPatients(false);
+    }
   }, []);
+
+  // Efeitos iniciais
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.all([loadClinics(), loadPatients()]);
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadClinics, loadPatients]);
 
   // Filtro de clínicas
   const filteredClinics = clinics.filter((c) =>
-    (c.name + c.email).toLowerCase().includes(clinicSearch.trim().toLowerCase())
+    (c.name + c.email)
+      .toLowerCase()
+      .includes(clinicSearch.trim().toLowerCase())
   );
 
   // Filtro de pacientes
   const filteredPatients = patients.filter((p) =>
-    (p.name + p.email + (p.phone || "") + (p.address || "")).toLowerCase().includes(patientSearch.trim().toLowerCase())
+    (p.name + p.email + (p.phone || "") + (p.address || ""))
+      .toLowerCase()
+      .includes(patientSearch.trim().toLowerCase())
   );
 
   // Copiar texto helper
   const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(() => {});
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pt-24">
       <Header />
       <div className="max-w-6xl mx-auto p-6 bg-white rounded-xl shadow mt-8">
-        <h1 className="text-3xl font-bold mb-2 text-gray-800">Painel de Desenvolvedor</h1>
+        <h1 className="text-3xl font-bold mb-2 text-gray-800">
+          Painel de Desenvolvedor
+        </h1>
         <p className="mb-6 text-gray-600">
           Lista, busca e ações rápidas para todas as clínicas e pacientes cadastrados.
         </p>
 
         {/* Abas */}
         <div className="flex gap-4 mb-8">
-          <button
-            className={`px-4 py-2 rounded-t-lg border-b-2 font-semibold transition-all ${
-              activeTab === "clinics"
-                ? "border-blue-600 text-blue-700 bg-gray-100"
-                : "border-transparent text-gray-500 hover:text-blue-600"
-            }`}
-            onClick={() => setActiveTab("clinics")}
-          >
-            Clínicas
-          </button>
-          <button
-            className={`px-4 py-2 rounded-t-lg border-b-2 font-semibold transition-all ${
-              activeTab === "patients"
-                ? "border-blue-600 text-blue-700 bg-gray-100"
-                : "border-transparent text-gray-500 hover:text-blue-600"
-            }`}
-            onClick={() => setActiveTab("patients")}
-          >
-            Pacientes
-          </button>
+            <button
+              className={`px-4 py-2 rounded-t-lg border-b-2 font-semibold transition-all ${
+                activeTab === "clinics"
+                  ? "border-blue-600 text-blue-700 bg-gray-100"
+                  : "border-transparent text-gray-500 hover:text-blue-600"
+              }`}
+              onClick={() => setActiveTab("clinics")}
+            >
+              Clínicas
+            </button>
+            <button
+              className={`px-4 py-2 rounded-t-lg border-b-2 font-semibold transition-all ${
+                activeTab === "patients"
+                  ? "border-blue-600 text-blue-700 bg-gray-100"
+                  : "border-transparent text-gray-500 hover:text-blue-600"
+              }`}
+              onClick={() => setActiveTab("patients")}
+            >
+              Pacientes
+            </button>
         </div>
 
-        {/* Conteúdo das Abas */}
+        {/* Conteúdo Clínicas */}
         {activeTab === "clinics" && (
           <div>
-            <h2 className="text-xl font-semibold mb-2">
-              Clínicas{" "}
-              <span className="text-sm text-gray-400">
-                ({filteredClinics.length})
-              </span>
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-semibold">
+                Clínicas{" "}
+                <span className="text-sm text-gray-400">
+                  ({filteredClinics.length})
+                </span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadClinics}
+                  disabled={loadingClinics}
+                  className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Recarregar
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 mb-4">
               <input
                 type="text"
@@ -142,12 +193,13 @@ const DeveloperPanel: React.FC = () => {
                 </button>
               )}
             </div>
+
             {loadingClinics && (
               <div className="py-10 text-center text-gray-500">
                 Carregando clínicas...
               </div>
             )}
-            {errorClinics && (
+            {errorClinics && !loadingClinics && (
               <div className="py-10 text-center text-red-500">
                 {errorClinics}
               </div>
@@ -231,14 +283,27 @@ const DeveloperPanel: React.FC = () => {
           </div>
         )}
 
+        {/* Conteúdo Pacientes */}
         {activeTab === "patients" && (
           <div>
-            <h2 className="text-xl font-semibold mb-2">
-              Pacientes{" "}
-              <span className="text-sm text-gray-400">
-                ({filteredPatients.length})
-              </span>
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-semibold">
+                Pacientes{" "}
+                <span className="text-sm text-gray-400">
+                  ({filteredPatients.length})
+                </span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadPatients}
+                  disabled={loadingPatients}
+                  className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Recarregar
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 mb-4">
               <input
                 type="text"
@@ -256,12 +321,13 @@ const DeveloperPanel: React.FC = () => {
                 </button>
               )}
             </div>
+
             {loadingPatients && (
               <div className="py-10 text-center text-gray-500">
                 Carregando pacientes...
               </div>
             )}
-            {errorPatients && (
+            {errorPatients && !loadingPatients && (
               <div className="py-10 text-center text-red-500">
                 {errorPatients}
               </div>
