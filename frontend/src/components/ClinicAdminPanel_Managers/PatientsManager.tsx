@@ -4,15 +4,13 @@ import { Plus, Search, Edit, Trash2, BookOpenCheck, ActivitySquare, Eye } from '
 import type { Patient } from './types';
 import PatientMainDataForm, { PatientMainData } from './PatientForm/PatientMainDataForm';
 import PatientAnamneseTcleForm from './PatientForm/PatientAnamneseTcleForm';
-// Importação correta via index.ts da pasta
 import { PatientProceduresForm } from './PatientForm/PatientProceduresForm';
 import {
   fetchPatientProcedures,
   addPatient,
   updatePatient,
 } from '../../api';
-
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
+import { API_BASE_URL, fileUrl } from '../../api/apiBase';
 
 function getClinicId(): string {
   const id = localStorage.getItem("clinic_id");
@@ -22,9 +20,7 @@ function getClinicId(): string {
 
 function getPhotoUrl(photo?: string | null): string | undefined {
   if (!photo) return undefined;
-  if (/^https?:\/\//.test(photo)) return photo;
-  if (photo.startsWith("/uploads/")) return `${API_URL}${photo}`;
-  return `${API_URL}/uploads/${photo}`;
+  return fileUrl(photo);
 }
 
 function patientToForm(patient: Patient): Partial<PatientMainData> {
@@ -114,7 +110,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         setPatients(prev => [...prev, newPatient]);
       }
       handleCloseModal();
-    } catch (error) {
+    } catch {
       alert('Erro ao salvar paciente.');
     }
   };
@@ -126,11 +122,17 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   const handleSaveAnamneseTcle = async (formData: { anamnesis: string; tcle: string; patientId: number }) => {
     const clinicId = getClinicId();
     try {
-      await fetch(`${API_URL}/api/patients/${formData.patientId}/anamnese-tcle?clinicId=${clinicId}`, {
+      // Endpoint de atualização combinado (ajuste nome se no backend for outro)
+      const url = new URL(`${API_BASE_URL}/patients/${formData.patientId}/anamnese-tcle`);
+      url.searchParams.set("clinicId", clinicId);
+
+      const res = await fetch(url.toString(), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
+
+      if (!res.ok) throw new Error();
 
       setPatients(prev =>
         prev.map(p =>
@@ -145,7 +147,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     }
   };
 
-  const handleSaveProcedures = async (procedures: any[]) => {
+  const handleSaveProcedures = async (_procedures: any[]) => {
     if (!showProceduresModal) return;
     const patientId = showProceduresModal.id;
     const clinicId = getClinicId();
@@ -155,7 +157,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         prev.map(p => (p.id === patientId ? { ...p, procedures: updatedProcedures } : p))
       );
       setShowProceduresModal(null);
-    } catch (err) {
+    } catch {
       alert("Erro ao salvar procedimentos do paciente.");
     }
   };

@@ -43,7 +43,7 @@ function App() {
         <button
           style={{ marginTop: 16, padding: '8px 24px' }}
           onClick={() => {
-            if (senha === 'minhasenha') setAuthed(true);
+            if (senha === 'vis') setAuthed(true);
             else alert('Senha incorreta!');
           }}
         >

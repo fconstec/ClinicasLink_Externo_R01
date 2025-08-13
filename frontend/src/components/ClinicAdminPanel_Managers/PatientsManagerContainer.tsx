@@ -6,9 +6,9 @@ import PatientAnamneseTcleForm from "./PatientForm/PatientAnamneseTcleForm";
 import PatientFullView from "./PatientForm/PatientFullView";
 import type { Patient, Procedure } from "./types";
 import { fetchPatients, deletePatient } from "@/api";
+import { API_BASE_URL, fileUrl } from "@/api/apiBase";
 
 const currentProfessionalId = 1;
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
 function getClinicId(): string | null {
   return localStorage.getItem("clinic_id");
@@ -16,33 +16,36 @@ function getClinicId(): string | null {
 
 function getPhotoUrl(photo?: string | null): string | undefined {
   if (!photo) return undefined;
-  if (/^https?:\/\//.test(photo)) return photo;
-  if (photo.startsWith("/uploads/")) return `${API_URL}${photo}`;
-  return `${API_URL}/uploads/${photo}`;
+  return fileUrl(photo);
 }
 
 function getImageUrl(url: string) {
   if (!url) return "";
-  if (url.startsWith("http")) return url;
-  if (url.startsWith("/uploads/")) return `${API_URL}${url}`;
-  return `${API_URL}/uploads/${url}`;
+  return fileUrl(url);
 }
 
 async function fetchFullPatientData(patient: Patient, clinicId: string) {
   let anamnesis: any = "";
   let tcle: any = "";
-  let appointments: any[] = [];
   let procedures: any[] = [];
 
   try {
-    const res = await fetch(`${API_URL}/api/patients/${patient.id}/anamnese?clinicId=${clinicId}`);
+    const urlAnam = new URL(`${API_BASE_URL}/patients/${patient.id}/anamnese`);
+    urlAnam.searchParams.set("clinicId", clinicId);
+    const res = await fetch(urlAnam.toString());
     if (res.ok) {
       const json = await res.json();
       anamnesis = json.anamnese;
       tcle = json.tcle;
     }
+  } catch (e) {
+    console.warn("[fetchFullPatientData] anamnese erro:", e);
+  }
 
-    const resProc = await fetch(`${API_URL}/api/patients/${patient.id}/procedures?clinicId=${clinicId}`);
+  try {
+    const urlProc = new URL(`${API_BASE_URL}/patients/${patient.id}/procedures`);
+    urlProc.searchParams.set("clinicId", clinicId);
+    const resProc = await fetch(urlProc.toString());
     if (resProc.ok) {
       const procs = await resProc.json();
       procedures = Array.isArray(procs)
@@ -58,7 +61,9 @@ async function fetchFullPatientData(patient: Patient, clinicId: string) {
           }))
         : [];
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[fetchFullPatientData] procedures erro:", e);
+  }
 
   return {
     patient: {
@@ -107,10 +112,8 @@ const PatientsManagerContainer: React.FC = () => {
 
   const handleDeletePatient = async (patientId: number) => {
     if (!clinicId) return;
-
     const confirmed = window.confirm("Tem certeza que deseja excluir este paciente?");
     if (!confirmed) return;
-
     try {
       await deletePatient(patientId, clinicId);
       setPatients(prev => prev.filter(p => p.id !== patientId));
@@ -228,7 +231,12 @@ const PatientsManagerContainer: React.FC = () => {
       onShowMainData={handleShowMainData}
       onShowProcedures={handleShowProcedures}
       onShowAnamneseTcle={handleShowAnamneseTcle}
-      getPatientFullData={(patient) => fetchFullPatientData(patient, clinicId)}
+      // CORREÇÃO: somente passa a prop se clinicId existir
+      getPatientFullData={
+        clinicId
+          ? (patient) => fetchFullPatientData(patient, clinicId)
+          : undefined
+      }
       onShowFullView={handleShowFullView}
     />
   );

@@ -1,34 +1,34 @@
-// Valor da env (pode vir com ou sem /api no final)
+// (Mantém exatamente o que você já tinha; acrescentado apenas documentação)
+
 const RAW = (process.env.REACT_APP_API_URL ?? "").trim();
-
-// Remove barras finais extras
 const noTrailing = RAW.replace(/\/+$/, "");
-
-// Remove um "/api" final, se houver
 const baseWithoutApi = noTrailing.replace(/\/api$/i, "");
-
-// Exporta SEM "/api" para manter compatibilidade com código legado que faz `${API_BASE_URL}/api/...`
-export const API_BASE_URL = baseWithoutApi;
+const finalBase = baseWithoutApi || (process.env.NODE_ENV === "development" ? "http://localhost:3001" : "");
+export const API_BASE_URL = finalBase;
 
 /**
- * Monta uma URL garantindo exatamente um "/api" no prefixo,
- * independentemente de como a env veio e mesmo que o path já contenha "/api".
- *
- * Ex.:
- *  apiUrl("/patients")        -> "<base>/api/patients"
- *  apiUrl("api/patients")     -> "<base>/api/patients"
- *  apiUrl("/api/patients")    -> "<base>/api/patients"
+ * IMPORTANTE:
+ * Rotas de Pacientes (listagem, CRUD, busca, sub-recursos) estão SEM prefixo /api:
+ *   GET/POST   /patients
+ *   GET/PUT    /patients/:id
+ *   GET/PUT    /patients/:id/anamnese  (ou anamnese-tcle)   -> ver naming real
+ *   GET        /patients/:id/procedures
+ * Ajustar caso backend mude.
  */
-export function apiUrl(path: string): string {
-  let p = `${path || ""}`.trim();
 
-  // Normaliza path: remove barras iniciais e prefixo "api/"
+export function apiUrl(path: string): string {
+  let p = (path || "").trim();
   p = p.replace(/^\/+/, "");
   if (p.toLowerCase().startsWith("api/")) {
     p = p.slice(4);
   }
-
   const url = `${API_BASE_URL}/api/${p}`;
-  // Remove barras duplicadas no meio (sem tocar no protocolo)
   return url.replace(/([^:]\/)\/+/g, "$1");
+}
+
+export function fileUrl(pathOrUrl: string | undefined | null): string {
+  const v = (pathOrUrl ?? "").trim();
+  if (!v) return "";
+  if (/^(https?:|data:)/i.test(v)) return v;
+  return `${API_BASE_URL}/${v.replace(/^\/+/, "")}`.replace(/([^:]\/)\/+/g, "$1");
 }

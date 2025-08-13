@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { PatientSearchResult } from "./types";
-import { apiUrl } from "../../api/apiBase";
+import { API_BASE_URL } from "@/api/apiBase";
 
 export function usePatientSearch(
   search: string,
@@ -13,16 +13,16 @@ export function usePatientSearch(
 
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const q = (search ?? "").trim();
+    const q = (search || "").trim();
 
-    if (q.length < 2 || !!patientId) {
+    if (q.length < 2 || patientId) {
       setPatientOptions([]);
       setShowPatientDropdown(false);
       return () => {
         controller.abort();
-        if (timer) clearTimeout(timer);
+        clearTimeout(timer);
       };
     }
 
@@ -30,32 +30,49 @@ export function usePatientSearch(
     setShowPatientDropdown(true);
 
     timer = setTimeout(async () => {
-      try {
-        const url = new URL(apiUrl("/patients"));
+      const buildUrl = (base: string) => {
+        const url = new URL(base);
         url.searchParams.set("clinicId", String(clinicId));
-        // compat: envie os três nomes de parâmetro aceitos pelo backend
+        // múltiplos params por compatibilidade
         url.searchParams.set("search", q);
         url.searchParams.set("q", q);
         url.searchParams.set("name", q);
+        return url.toString();
+      };
 
-        const res = await fetch(url.toString(), { signal: controller.signal });
+      const primary = buildUrl(`${API_BASE_URL}/patients`);
+      const fallback = buildUrl(`${API_BASE_URL}/api/patients`);
+
+      let data: any[] = [];
+      try {
+        // 1ª tentativa (sem /api)
+        let res = await fetch(primary, { signal: controller.signal });
+        if (res.status === 404) {
+          // tenta fallback com /api
+          res = await fetch(fallback, { signal: controller.signal });
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const data = (await res.json()) as unknown;
-        setPatientOptions(Array.isArray(data) ? data : []);
-      } catch (err: any) {
-        if (err?.name === "AbortError" || err?.code === "ERR_CANCELED") return;
-        setPatientOptions([]);
+        const json = await res.json();
+        if (Array.isArray(json)) data = json;
+      } catch (e: any) {
+        if (e?.name === "AbortError") return;
+        data = [];
       } finally {
+        setPatientOptions(data);
         setLoadingPatients(false);
       }
     }, 300);
 
     return () => {
       controller.abort();
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     };
   }, [search, patientId, clinicId]);
 
-  return { patientOptions, loadingPatients, showPatientDropdown, setShowPatientDropdown };
+  return {
+    patientOptions,
+    loadingPatients,
+    showPatientDropdown,
+    setShowPatientDropdown,
+  };
 }
