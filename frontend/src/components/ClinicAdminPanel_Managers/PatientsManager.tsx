@@ -9,12 +9,13 @@ import {
   fetchPatientProcedures,
   addPatient,
   updatePatient,
-} from '../../api';
-import { API_BASE_URL, fileUrl } from '../../api/apiBase';
+  updatePatientAnamnesisTcle,
+} from '@/api/patientsApi';
+import { fileUrl } from '@/api/apiBase';
 
 function getClinicId(): string {
-  const id = localStorage.getItem("clinic_id");
-  if (!id) throw new Error("clinic_id não encontrado no localStorage.");
+  const id = localStorage.getItem('clinic_id');
+  if (!id) throw new Error('clinic_id não encontrado no localStorage.');
   return id;
 }
 
@@ -42,13 +43,14 @@ export interface PatientsManagerProps {
   onShowProcedures: (patient: Patient) => void;
   onShowAnamneseTcle: (patient: Patient) => void;
   getPatientFullData?: (patient: Patient) => Promise<{
-    patient: any,
-    anamnesis?: any,
-    tcle?: any,
-    procedures?: any,
-    appointments?: any
+    patient: any;
+    anamnesis?: any;
+    tcle?: any;
+    procedures?: any;
+    appointments?: any;
   }>;
   onShowFullView?: (patient: Patient) => void;
+  onReload?: () => void;
 }
 
 const PatientsManager: React.FC<PatientsManagerProps> = ({
@@ -60,6 +62,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   onShowAnamneseTcle,
   getPatientFullData,
   onShowFullView,
+  onReload,
 }) => {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -105,12 +108,13 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       } else {
         const newPatient = await addPatient({
           ...formData,
-          clinicId,
+            clinicId,
         });
         setPatients(prev => [...prev, newPatient]);
       }
       handleCloseModal();
-    } catch {
+    } catch (e) {
+      // eslint-disable-next-line no-alert
       alert('Erro ao salvar paciente.');
     }
   };
@@ -122,17 +126,10 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   const handleSaveAnamneseTcle = async (formData: { anamnesis: string; tcle: string; patientId: number }) => {
     const clinicId = getClinicId();
     try {
-      // Endpoint de atualização combinado (ajuste nome se no backend for outro)
-      const url = new URL(`${API_BASE_URL}/patients/${formData.patientId}/anamnese-tcle`);
-      url.searchParams.set("clinicId", clinicId);
-
-      const res = await fetch(url.toString(), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+      await updatePatientAnamnesisTcle(formData.patientId, clinicId, {
+        anamnesis: formData.anamnesis,
+        tcle: formData.tcle,
       });
-
-      if (!res.ok) throw new Error();
 
       setPatients(prev =>
         prev.map(p =>
@@ -143,7 +140,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       );
       setShowAnamneseTcleModal(null);
     } catch {
-      alert("Erro ao salvar Anamnese e TCLE do paciente.");
+      alert('Erro ao salvar Anamnese / TCLE.');
     }
   };
 
@@ -158,15 +155,17 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       );
       setShowProceduresModal(null);
     } catch {
-      alert("Erro ao salvar procedimentos do paciente.");
+      alert('Erro ao salvar procedimentos do paciente.');
     }
   };
 
-  const addButtonClasses = "bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-4 py-2 rounded text-sm font-medium transition-colors";
+  const addButtonClasses =
+    'bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-4 py-2 rounded text-sm font-medium transition-colors';
   const professionalId = 1;
 
   return (
     <div className="space-y-6">
+      {/* Modais */}
       {showModal && (
         <PatientMainDataForm
           patient={modalMode === 'edit' && selectedPatient ? patientToForm(selectedPatient) : undefined}
@@ -197,6 +196,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         />
       )}
 
+      {/* Header / Filtros */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-8 gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Pacientes</h2>
         <div className="flex flex-col md:flex-row gap-3 items-center">
@@ -210,31 +210,54 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           </div>
-          <Button
-            type="button"
-            className={addButtonClasses}
-            onClick={handleAddPatient}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar Paciente
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className={addButtonClasses}
+              onClick={handleAddPatient}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Adicionar Paciente
+            </Button>
+            {onReload && (
+              <Button
+                type="button"
+                variant="outline"
+                className="flex items-center px-4 py-2 rounded text-sm font-medium border border-gray-300 hover:bg-gray-100"
+                onClick={onReload}
+              >
+                Recarregar
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Tabela */}
       <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Nasc.</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Telefone</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Nome
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Data Nasc.
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Telefone
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Email
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Ações
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredPatients.length > 0 ? (
-              filteredPatients.map((patient) => (
+              filteredPatients.map(patient => (
                 <tr key={patient.id} className="hover:bg-gray-50/70">
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -245,11 +268,15 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
                           className="w-8 h-8 rounded-full object-cover border border-gray-200 mr-2"
                         />
                       )}
-                      <span className="text-sm font-medium text-gray-900">{patient.name}</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {patient.name}
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {patient.birthDate ? new Date(patient.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-400">—</span>}
+                    {patient.birthDate
+                      ? new Date(patient.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+                      : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                     {patient.phone || <span className="text-gray-400">—</span>}
@@ -305,9 +332,16 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="text-center text-gray-400 py-8 text-sm">
+                <td
+                  colSpan={5}
+                  className="text-center text-gray-400 py-8 text-sm"
+                >
                   Nenhum paciente encontrado.
-                  {search && <span className="block text-xs">Ajuste os termos da sua busca.</span>}
+                  {search && (
+                    <span className="block text-xs">
+                      Ajuste os termos da sua busca.
+                    </span>
+                  )}
                 </td>
               </tr>
             )}
