@@ -33,7 +33,7 @@ export function usePatientSearch(
       try {
         const url = new URL(apiUrl("/patients"));
         url.searchParams.set("clinicId", String(clinicId));
-        // Compatibilidade: alguns backends aceitam search, q ou name
+        // compat: envie os três nomes de parâmetro aceitos pelo backend
         url.searchParams.set("search", q);
         url.searchParams.set("q", q);
         url.searchParams.set("name", q);
