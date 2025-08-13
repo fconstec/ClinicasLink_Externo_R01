@@ -51,13 +51,123 @@ interface CalendarTabProps {
   services: Service[];
 }
 
+/**
+ * Representação bruta vinda do backend (campos em snake_case ou variações).
+ * Coloque aqui tudo que possa aparecer para evitar uso de any fora da normalização.
+ */
+interface RawAppointment {
+  id: number | string;
+  patientId?: number | string;
+  patient_id?: number | string;
+  patient_name?: string;
+  patient_name_full?: string;
+  patientPhone?: string;
+  patient_phone?: string;
+  professionalId?: number | string;
+  professional_id?: number | string;
+  professional?: number | string;
+  professionalName?: string;
+  professional_name?: string;
+  serviceId?: number | string;
+  service_id?: number | string;
+  serviceName?: string;
+  service?: string;
+  service_name?: string;
+  date: string;
+  time?: string;
+  endTime?: string;
+  status?: string;
+  notes?: string;
+  // Campos extras que possam chegar
+  [key: string]: any;
+}
+
+/**
+ * Normaliza um RawAppointment em um Appointment (camelCase).
+ * Ajuste se o tipo Appointment no seu projeto possuir campos diferentes.
+ */
+function normalizeRawAppointment(raw: RawAppointment): Appointment {
+  const safeSliceTime = (t?: string) =>
+    t ? String(t).slice(0, 5) : undefined;
+
+  const date = String(raw.date).slice(0, 10);
+  const time = safeSliceTime(raw.time);
+  const endTime = safeSliceTime(raw.endTime);
+
+  return {
+    id: Number(raw.id),
+    patientId:
+      raw.patientId != null
+        ? Number(raw.patientId)
+        : raw.patient_id != null
+        ? Number(raw.patient_id)
+        : undefined,
+    patientName:
+      raw.patientName ||
+      raw.patient_name ||
+      raw.patient_name_full ||
+      "",
+    patientPhone: raw.patientPhone || raw.patient_phone || "",
+    professionalId: Number(
+      raw.professionalId ?? raw.professional_id ?? raw.professional
+    ),
+    professionalName:
+      raw.professionalName || raw.professional_name || "",
+    serviceId:
+      raw.serviceId != null
+        ? Number(raw.serviceId)
+        : raw.service_id != null
+        ? Number(raw.service_id)
+        : undefined,
+    serviceName:
+      raw.serviceName || raw.service || raw.service_name || "",
+    date,
+    time: time || "",
+    endTime,
+    status: (raw.status || "pending") as AppointmentStatus,
+    notes: raw.notes,
+  } as Appointment;
+}
+
+interface ScheduleModalEditing {
+  eventData: {
+    id: number;
+    patientId?: number;
+    patientName: string;
+    patientPhone?: string;
+    professionalId: number;
+    serviceId: number;
+    serviceName: string;
+    date: string;
+    time: string;
+    endTime?: string;
+    status?: AppointmentStatus;
+    notes?: string;
+  };
+}
+
+interface ScheduleModalCreating {
+  eventData: null;
+  date: string;
+  professionalId?: number;
+  time: string;
+  endTime?: string;
+}
+
+type ScheduleModalInfo = ScheduleModalEditing | ScheduleModalCreating;
+
 const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleModalInfo, setScheduleModalInfo] = useState<any>(null);
+  const [scheduleModalInfo, setScheduleModalInfo] =
+    useState<ScheduleModalInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const clinicId = useMemo(() => localStorage.getItem("clinic_id") || "", []);
+
+  const clinicId = useMemo(
+    () => localStorage.getItem("clinic_id") || "",
+    []
+  );
 
   const loadAppointments = useCallback(async () => {
     if (!clinicId) return;
@@ -67,46 +177,10 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       const url = `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
+      const data: unknown = await res.json();
       if (Array.isArray(data)) {
         setAppointments(
-          data.map((raw: any) => ({
-            id: Number(raw.id),
-            patientId:
-              raw.patientId != null
-                ? Number(raw.patientId)
-                : raw.patient_id != null
-                ? Number(raw.patient_id)
-                : undefined,
-            patientName:
-              raw.patientName ||
-              raw.patient_name ||
-              raw.patient_name_full ||
-              "",
-            patientPhone: raw.patientPhone || raw.patient_phone || "",
-            professionalId: Number(
-              raw.professionalId ?? raw.professional_id ?? raw.professional
-            ),
-            professionalName:
-              raw.professionalName || raw.professional_name || "",
-            serviceId:
-              raw.serviceId != null
-                ? Number(raw.serviceId)
-                : raw.service_id != null
-                ? Number(raw.service_id)
-                : undefined,
-            serviceName:
-              raw.serviceName || raw.service || raw.service_name || "",
-            date: String(raw.date).slice(0, 10),
-            time: (raw.time || "").slice(0, 5),
-            endTime: raw.endTime ? String(raw.endTime).slice(0, 5) : undefined,
-            status: (raw.status || "pending") as AppointmentStatus,
-            notes: raw.notes,
-            // campos legados mantidos se outros lugares usam:
-            service: raw.service,
-            service_name: raw.service_name,
-            professional_name: raw.professional_name,
-          }))
+          data.map((raw) => normalizeRawAppointment(raw as RawAppointment))
         );
       } else {
         setAppointments([]);
@@ -127,10 +201,10 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
   const calendarProfessionals = useMemo(
     () =>
       professionals
-        .filter((p) => (p as any).available !== false) // se tiver flag de disponibilidade
+        .filter((p) => (p as any).available !== false)
         .map((p, idx) => ({
           id: Number(p.id),
-            name: p.name,
+          name: p.name,
           color:
             PROFESSIONAL_CALENDAR_COLORS[
               idx % PROFESSIONAL_CALENDAR_COLORS.length
@@ -146,7 +220,9 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
         (a) =>
           a.status !== "cancelled" &&
           a.professionalId != null &&
-          calendarProfessionals.some((p) => p.id === Number(a.professionalId))
+          calendarProfessionals.some(
+            (p) => p.id === Number(a.professionalId)
+          )
       )
       .map((appt) => {
         const ev = mapAppointmentToCalendarEvent(appt, { services });
@@ -161,45 +237,38 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       .filter((e): e is CalendarEvent => !!e);
   }, [appointments, calendarProfessionals, services]);
 
-  const handleNewOrEditCalendarEvent = (info: any) => {
-    // Abrindo novo
+  const handleNewOrEditCalendarEvent = (info: {
+    date?: string;
+    professionalId?: number;
+    time?: string;
+    endTime?: string;
+    event?: CalendarEvent;
+  }) => {
     if (!info?.event) {
-      const date =
-        info?.date instanceof Date
-          ? info.date.toISOString().slice(0, 10)
-          : info?.date || "";
-      const time =
-        info?.time ||
-        (info?.date instanceof Date
-          ? info.date.toTimeString().slice(0, 5)
-          : "");
-      const endTime =
-        info?.endTime ||
-        (info?.end instanceof Date
-          ? info.end.toTimeString().slice(0, 5)
-          : info?.endTime || "");
+      const date = info.date || "";
+      const time = info.time || "";
+      const endTime = info.endTime || "";
       setScheduleModalInfo({
         eventData: null,
         date,
         time,
         endTime,
-        professionalId: info?.professionalId
-          ? Number(info.professionalId)
-          : undefined,
+        professionalId: info.professionalId,
       });
       setShowScheduleModal(true);
       return;
     }
 
-    // Editando: info.event é CalendarEvent
-    const ext = info.event.extendedProps || {};
+    const ev = info.event;
+    const ext = ev.extendedProps || {};
+
     setScheduleModalInfo({
       eventData: {
-        id: Number(ext.id ?? info.event.id),
+        id: Number(ext.id ?? ev.id),
         patientId: ext.patientId,
         patientName: ext.patientName || "",
         patientPhone: ext.patientPhone,
-        professionalId: Number(ext.professionalId ?? info.event.resourceId),
+        professionalId: Number(ext.professionalId ?? ev.resourceId),
         serviceId: Number(ext.serviceId),
         serviceName:
           ext.serviceName || ext.service || ext.service_name || "",
@@ -253,8 +322,8 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       patientPhone: formData.patientPhone,
       professionalId: profNum,
       serviceId: servNum,
-      service: svc.name,
-      serviceName: svc.name,
+      service: svc.name,       // se o backend ainda espera 'service'
+      serviceName: svc.name,   // se quiser manter ambos
       date: formData.date,
       time: formData.time,
       endTime: formData.endTime,
@@ -281,9 +350,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
         throw new Error(msg);
       }
       await res.json();
-      alert(
-        `Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`
-      );
+      alert(`Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`);
       setShowScheduleModal(false);
       setScheduleModalInfo(null);
       loadAppointments();
@@ -331,7 +398,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
               ? scheduleModalInfo.professionalId
               : undefined
           }
-          initialTime={
+            initialTime={
             scheduleModalInfo.eventData === null
               ? scheduleModalInfo.time
               : undefined
