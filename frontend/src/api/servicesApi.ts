@@ -1,56 +1,94 @@
-import { Service, NewServiceData } from '../components/ClinicAdminPanel_Managers/types';
-import { API_BASE_URL } from './apiBase';
+import { buildApiUrl, defaultJsonHeaders } from "./apiPrefix";
+import type { Service, NewServiceData } from "../components/ClinicAdminPanel_Managers/types";
 
-export async function fetchServices(clinicId?: string): Promise<Service[]> {
-  const url = clinicId
-    ? `${API_BASE_URL}/services?clinicId=${clinicId}`
-    : `${API_BASE_URL}/services`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Erro ao buscar serviços: ${res.statusText}`);
-  const data = await res.json();
-  return Array.isArray(data)
-    ? data.map((s: any) => ({
-        id: Number(s.id),
-        name: String(s.name),
-        duration: String(s.duration),
-        value: String(s.value),
-        description: s.description ?? undefined,
-      }))
-    : [];
+/**
+ * Normaliza objeto cru em Service.
+ */
+function mapService(raw: any): Service {
+  return {
+    id: Number(raw.id),
+    name: String(raw.name ?? "").trim(),
+    duration: raw.duration != null ? String(raw.duration) : "",
+    value: raw.value != null ? String(raw.value) : "",
+    description: raw.description ?? undefined,
+  };
 }
 
+async function parseOrThrow(res: Response, context: string) {
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `[servicesApi] ${context}: ${res.status} ${res.statusText}${
+        body ? " – " + body.slice(0, 300) : ""
+      }`
+    );
+  }
+  return res.json();
+}
+
+/**
+ * Lista serviços da clínica.
+ */
+export async function fetchServices(clinicId?: string): Promise<Service[]> {
+  const url = await buildApiUrl("services", clinicId ? { clinicId } : undefined);
+  const res = await fetch(url);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(
+      `[servicesApi] fetchServices: ${res.status} ${res.statusText}${
+        txt ? " – " + txt.slice(0, 300) : ""
+      }`
+    );
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(mapService) : [];
+}
+
+/**
+ * Cria serviço.
+ */
 export async function addService(
   data: NewServiceData & { clinicId: string }
 ): Promise<Service> {
-  const res = await fetch(`${API_BASE_URL}/services`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const url = await buildApiUrl("services");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: defaultJsonHeaders(),
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message || 'Erro ao adicionar serviço.');
-  }
-  return await res.json();
+  const json = await parseOrThrow(res, "addService");
+  return mapService(json);
 }
 
+/**
+ * Atualiza serviço.
+ */
 export async function updateService(
   id: number,
-  data: Omit<Service, 'id'> & { clinicId: string }
+  data: Omit<Service, "id"> & { clinicId: string }
 ): Promise<Service> {
-  const res = await fetch(`${API_BASE_URL}/services/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+  const url = await buildApiUrl(`services/${id}`);
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: defaultJsonHeaders(),
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Erro ao atualizar serviço: ${res.statusText}`);
-  return await res.json();
+  const json = await parseOrThrow(res, "updateService");
+  return mapService(json);
 }
 
+/**
+ * Remove serviço.
+ */
 export async function deleteService(id: number, clinicId: string): Promise<void> {
-  const res = await fetch(
-    `${API_BASE_URL}/services/${id}?clinicId=${clinicId}`,
-    { method: 'DELETE' }
-  );
-  if (!res.ok) throw new Error(`Erro ao deletar serviço: ${res.statusText}`);
+  const url = await buildApiUrl(`services/${id}`, { clinicId });
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(
+      `[servicesApi] deleteService: ${res.status} ${res.statusText}${
+        txt ? " – " + txt.slice(0, 300) : ""
+      }`
+    );
+  }
 }
