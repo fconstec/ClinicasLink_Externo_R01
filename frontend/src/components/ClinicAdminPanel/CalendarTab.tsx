@@ -11,6 +11,7 @@ import type {
 import type { SubmittedFormData as ScheduleFormData } from "@/components/ScheduleForm/types";
 import type { CalendarEvent } from "@/components/SuperCalendar/types";
 import { API_BASE_URL } from "@/api/apiBase";
+import { buildApiUrl } from "@/api/apiPrefix";
 
 const PROFESSIONAL_CALENDAR_COLORS = [
   "#EF4444",
@@ -84,7 +85,6 @@ interface RawAppointment {
 
 /**
  * Normaliza um RawAppointment em Appointment (camelCase).
- * Ajuste se seu Appointment tiver diferenças.
  */
 function normalizeRawAppointment(raw: RawAppointment): Appointment {
   const sliceTime = (t?: string) => (t ? String(t).slice(0, 5) : undefined);
@@ -162,22 +162,79 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
     []
   );
 
+  /**
+   * Tenta carregar appointments usando múltiplos padrões de rota para diagnosticar 404.
+   * Assim que identificarmos a rota real usada pelo backend, podemos simplificar.
+   */
   const loadAppointments = useCallback(async () => {
     if (!clinicId) return;
     setLoading(true);
     setError(null);
-    try {
-      const url = `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(res.statusText);
-      const data: unknown = await res.json();
-      if (Array.isArray(data)) {
-        setAppointments(
-          data.map((raw) => normalizeRawAppointment(raw as RawAppointment))
+
+    async function fetchAppointmentsWithFallback(): Promise<Appointment[]> {
+      const attempts: { label: string; url: string }[] = [];
+
+      async function build(
+        label: string,
+        path: string,
+        params?: Record<string, any>,
+        forceApi = false
+      ) {
+        const u = await buildApiUrl(
+          path,
+            params,
+            forceApi ? { forceApi: true } : undefined
         );
-      } else {
-        setAppointments([]);
+        attempts.push({ label, url: u });
+        return u;
       }
+
+      // Ordem de tentativas (ajuste conforme conhecer seu backend):
+      // 1. /appointments?clinicId=
+      // 2. /appointments?clinic_id=
+      // 3. /clinics/{id}/appointments
+      // 4. forceApi /appointments?clinicId=
+      // 5. forceApi /clinics/{id}/appointments
+      await build("appointments clinicId", "appointments", { clinicId });
+      await build("appointments clinic_id", "appointments", { clinic_id: clinicId });
+      await build("clinics/:id/appointments", `clinics/${clinicId}/appointments`);
+      await build("forceApi appointments clinicId", "appointments", { clinicId }, true);
+      await build("forceApi clinics/:id/appointments", `clinics/${clinicId}/appointments`, undefined, true);
+
+      const triedResults: { label: string; url: string; status?: number; ok?: boolean; note?: string }[] = [];
+
+      for (const attempt of attempts) {
+        try {
+          const res = await fetch(attempt.url);
+          triedResults.push({ label: attempt.label, url: attempt.url, status: res.status, ok: res.ok });
+          if (res.ok) {
+            const data = await res.json();
+            console.log("[CalendarTab] Sucesso carregando via", attempt.label, attempt.url);
+            if (Array.isArray(data)) {
+              return data.map((raw) => normalizeRawAppointment(raw as RawAppointment));
+            }
+            return [];
+          }
+          // Continua tentando se não ok
+        } catch (err: any) {
+          triedResults.push({
+            label: attempt.label,
+            url: attempt.url,
+            note: err?.message || "erro fetch",
+          });
+        }
+      }
+
+      console.warn(
+        "[CalendarTab] Todas tentativas falharam para appointments. Tried:",
+        triedResults
+      );
+      throw new Error("Nenhuma rota de appointments respondeu (404?).");
+    }
+
+    try {
+      const list = await fetchAppointmentsWithFallback();
+      setAppointments(list);
     } catch (e: any) {
       console.error("[CalendarTab] Erro carregando appointments:", e);
       setError(e.message || "Erro ao carregar agendamentos.");
@@ -275,6 +332,10 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
     setShowScheduleModal(true);
   };
 
+  /**
+   * Criação/atualização com fallback de rota (somente para 404).
+   * - Evita duplicar criação: só tenta outra rota se a anterior retornar 404/Not Found.
+   */
   const handleModalSubmit = async (
     formData: ScheduleFormData,
     eventIdAsId?: string | number
@@ -315,8 +376,8 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       patientPhone: formData.patientPhone,
       professionalId: profNum,
       serviceId: servNum,
-      service: svc.name,       // se o backend ainda espera este campo
-      serviceName: svc.name,   // redundante por compatibilidade
+      service: svc.name, // se backend ainda espera
+      serviceName: svc.name,
       date: formData.date,
       time: formData.time,
       endTime: formData.endTime,
@@ -324,31 +385,99 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       notes: (formData as any).notes,
     };
 
+    interface Attempt {
+      label: string;
+      method: string;
+      url: string;
+    }
+
+    async function build(label: string, path: string, params?: Record<string, any>, forceApi = false) {
+      return {
+        label,
+        method: eventId ? "PUT" : "POST",
+        url: await buildApiUrl(
+          path,
+          params,
+          forceApi ? { forceApi: true } : undefined
+        ),
+      } as Attempt;
+    }
+
+    // Cria lista de tentativas (ordem semelhante ao fetch de listagem)
+    const attempts: Attempt[] = [];
+    if (eventId) {
+      // Update
+      attempts.push(
+        await build("update /appointments?clinicId", `appointments/${eventId}`, { clinicId }),
+        await build("update /appointments?clinic_id", `appointments/${eventId}`, { clinic_id: clinicId }),
+        await build("update /clinics/:id/appointments/:id", `clinics/${clinicId}/appointments/${eventId}`),
+        await build("update forceApi /appointments?clinicId", `appointments/${eventId}`, { clinicId }, true),
+        await build("update forceApi /clinics/:id/appointments/:id", `clinics/${clinicId}/appointments/${eventId}`, undefined, true)
+      );
+    } else {
+      // Create
+      attempts.push(
+        await build("create /appointments?clinicId", "appointments", { clinicId }),
+        await build("create /appointments?clinic_id", "appointments", { clinic_id: clinicId }),
+        await build("create /clinics/:id/appointments", `clinics/${clinicId}/appointments`),
+        await build("create forceApi /appointments?clinicId", "appointments", { clinicId }, true),
+        await build("create forceApi /clinics/:id/appointments", `clinics/${clinicId}/appointments`, undefined, true)
+      );
+    }
+
+    const tried: { label: string; url: string; status?: number; ok?: boolean; note?: string }[] = [];
+
     try {
-      const url = eventId
-        ? `${API_BASE_URL}/appointments/${eventId}?clinicId=${clinicId}`
-        : `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
-      const method = eventId ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let msg = res.statusText;
+      for (const attempt of attempts) {
         try {
-          const errJ = await res.json();
-          if (errJ?.message) msg = errJ.message;
-        } catch {}
-        throw new Error(msg);
+          const res = await fetch(attempt.url, {
+            method: attempt.method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          tried.push({ label: attempt.label, url: attempt.url, status: res.status, ok: res.ok });
+          if (res.ok) {
+            await res.json().catch(() => null);
+            alert(
+              `Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`
+            );
+            setShowScheduleModal(false);
+            setScheduleModalInfo(null);
+            // Recarrega
+            loadAppointments();
+            return;
+          } else if (res.status !== 404) {
+            // Se não for 404, não tenta outras rotas para evitar repetição
+            let msg = res.statusText;
+            try {
+              const errJ = await res.json();
+              if (errJ?.message) msg = errJ.message;
+            } catch {
+              /* ignore */
+            }
+            throw new Error(msg);
+          }
+          // se 404, tenta próxima
+        } catch (err: any) {
+          // erro de rede ou fetch
+          if (!err?.message?.includes("404")) {
+            tried.push({
+              label: attempt.label,
+              url: attempt.url,
+              note: err?.message || "erro",
+            });
+          }
+          // continua
+        }
       }
-      await res.json();
-      alert(`Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`);
-      setShowScheduleModal(false);
-      setScheduleModalInfo(null);
-      loadAppointments();
+
+      console.warn(
+        "[CalendarTab] Falharam todas as tentativas de salvar appointment",
+        tried
+      );
+      alert("Erro ao salvar agendamento (rota não encontrada).");
     } catch (e) {
-      console.error("Erro ao salvar agendamento:", e);
+      console.error("Erro ao salvar agendamento:", e, tried);
       alert("Erro ao salvar agendamento.");
     }
   };
@@ -375,7 +504,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
             setScheduleModalInfo(null);
           }}
           professionals={professionals}
-          services={services}
+            services={services}
           initialData={
             scheduleModalInfo.eventData
               ? scheduleModalInfo.eventData
