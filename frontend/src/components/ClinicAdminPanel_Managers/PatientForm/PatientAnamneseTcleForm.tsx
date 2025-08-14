@@ -1,7 +1,7 @@
-// src/components/ClinicAdminPanel_Managers/PatientForm/PatientAnamneseTcleForm.tsx
 import React, { useState, useEffect } from "react";
 import { Button } from "../../ui/button";
 import { X, Edit, Send } from "lucide-react";
+import { apiUrl, fileUrl } from "../../../api/apiBase"; // <- centraliza base (remove localhost hardcode)
 
 interface AnamneseTcleFormProps {
   patientId: number;
@@ -29,19 +29,33 @@ const PRE_EXISTING_DISEASES = [
 
 const DEFAULT_TCLE = `Declaro que fui informado(a) sobre o atendimento clínico e consinto, de forma livre e esclarecida, à realização dos procedimentos propostos.`;
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
-
+// Utilidades
 function getClinicId(): string | null {
   return localStorage.getItem("clinic_id");
 }
 
+// Normaliza foto (remove localhost se vier absoluto de desenvolvimento)
 function getNormalizedPhotoUrl(photo?: string | null): string | undefined {
-  if (photo && photo.trim() !== "") {
-    if (photo.startsWith("http")) return photo;
-    if (photo.startsWith("/uploads/")) return `${API_URL}${photo}`;
-    return `${API_URL}/uploads/${photo}`;
+  if (!photo) return undefined;
+  const v = photo.trim();
+  if (!v) return undefined;
+
+  if (/^https?:\/\//i.test(v)) {
+    try {
+      const u = new URL(v);
+      if (u.host.includes("localhost")) {
+        return fileUrl(u.pathname + u.search);
+      }
+      return v;
+    } catch {
+      return v;
+    }
   }
-  return undefined;
+
+  if (v.startsWith("/uploads/")) return fileUrl(v);
+  if (v.startsWith("uploads/")) return fileUrl("/" + v);
+  if (v.startsWith("/")) return fileUrl(v);
+  return fileUrl("/uploads/" + v);
 }
 
 const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
@@ -79,16 +93,16 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
   // Normaliza foto
   const normalizedPhotoUrl = getNormalizedPhotoUrl(patientPhotoUrl);
 
-  // Carrega anamnese/T CLE existente
+  // Carrega anamnese / TCLE existente
   useEffect(() => {
     const clinicId = getClinicId();
     if (!clinicId) return;
 
     async function fetchAnamnese() {
       try {
-        const res = await fetch(
-          `${API_URL}/api/patients/${patientId}/anamnese?clinicId=${clinicId}`
-        );
+        const endpoint =
+          apiUrl(`patients/${patientId}/anamnese`) + `?clinicId=${clinicId}`;
+        const res = await fetch(endpoint);
         if (!res.ok) return;
         const data = await res.json();
 
@@ -131,9 +145,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
   }, [patientId]);
 
   function togglePreExisting(disease: string) {
-    setPreExisting(prev =>
+    setPreExisting((prev) =>
       prev.includes(disease)
-        ? prev.filter(d => d !== disease)
+        ? prev.filter((d) => d !== disease)
         : [...prev, disease]
     );
   }
@@ -170,7 +184,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
       anamnese: JSON.stringify({
         chiefComplaint,
         preExisting: [
-          ...preExisting.filter(item => item !== "Outros"),
+          ...preExisting.filter((item) => item !== "Outros"),
           ...(otherDisease.trim() ? [otherDisease] : []),
         ],
         allergies,
@@ -188,18 +202,23 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
     };
 
     try {
-      const res = await fetch(
-        `${API_URL}/api/patients/${patientId}/anamnese?clinicId=${clinicId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(anamneseData),
-        }
-      );
+      const endpoint =
+        apiUrl(`patients/${patientId}/anamnese`) + `?clinicId=${clinicId}`;
+      const res = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(anamneseData),
+      });
 
       if (!res.ok) {
-        const erro = await res.json();
-        alert("Erro ao salvar: " + (erro.message || res.status));
+        let erroMsg = "";
+        try {
+          const erro = await res.json();
+            erroMsg = erro.message || res.status.toString();
+        } catch {
+          erroMsg = res.status.toString();
+        }
+        alert("Erro ao salvar: " + erroMsg);
       } else {
         alert("Anamnese salva com sucesso!");
         onSave && (await onSave(anamneseData));
@@ -256,7 +275,11 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         <div className="flex items-center gap-3 mb-6">
           <div className="relative w-16 h-16 rounded-full border-2 border-white shadow-lg bg-gray-200 overflow-hidden">
             {normalizedPhotoUrl ? (
-              <img src={normalizedPhotoUrl} alt="" className="object-cover w-full h-full" />
+              <img
+                src={normalizedPhotoUrl}
+                alt=""
+                className="object-cover w-full h-full"
+              />
             ) : (
               <span className="text-gray-300 text-3xl">+</span>
             )}
@@ -264,24 +287,28 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           <h2 className="text-xl font-bold text-[#e11d48]">{patientName}</h2>
         </div>
 
-        {/* Seções do formulário (queixa, doenças, etc.) */}
+        {/* Seções do formulário */}
         <h3 className="text-lg font-bold text-[#344055] mb-3">Anamnese</h3>
         {/* Queixa principal */}
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Queixa principal</label>
+          <label className="block text-sm font-medium mb-1">
+            Queixa principal
+          </label>
           <textarea
             required
             className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
             value={chiefComplaint}
-            onChange={e => setChiefComplaint(e.target.value)}
+            onChange={(e) => setChiefComplaint(e.target.value)}
             placeholder="Descreva a queixa principal"
           />
         </div>
         {/* Pré-existentes */}
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Doenças pré-existentes</label>
+          <label className="block text-sm font-medium mb-1">
+            Doenças pré-existentes
+          </label>
           <div className="flex flex-wrap gap-2 mb-2">
-            {PRE_EXISTING_DISEASES.map(opt => (
+            {PRE_EXISTING_DISEASES.map((opt) => (
               <label
                 key={opt}
                 className={`flex items-center gap-1 px-2 py-1 rounded border text-xs cursor-pointer transition ${
@@ -303,36 +330,50 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               className="border rounded p-1 text-xs w-full focus:border-[#e11d48]"
               placeholder="Outras doenças..."
               value={otherDisease}
-              onChange={e => setOtherDisease(e.target.value)}
+              onChange={(e) => setOtherDisease(e.target.value)}
             />
           </div>
         </div>
-        {/* Demais campos textuais */}
+        {/* Outros campos */}
         {[
           { label: "Alergias", state: allergies, setter: setAllergies },
-          { label: "Medicamentos em uso", state: medications, setter: setMedications },
-          { label: "Histórico de cirurgias", state: surgicalHistory, setter: setSurgicalHistory },
-          { label: "Histórico familiar", state: familyHistory, setter: setFamilyHistory },
+          {
+            label: "Medicamentos em uso",
+            state: medications,
+            setter: setMedications,
+          },
+          {
+            label: "Histórico de cirurgias",
+            state: surgicalHistory,
+            setter: setSurgicalHistory,
+          },
+          {
+            label: "Histórico familiar",
+            state: familyHistory,
+            setter: setFamilyHistory,
+          },
           { label: "Estilo de vida", state: lifestyle, setter: setLifestyle },
-          { label: "Hábitos (fumo, álcool)", state: habits, setter: setHabits },
+            { label: "Hábitos (fumo, álcool)", state: habits, setter: setHabits },
         ].map(({ label, state, setter }) => (
           <div className="mb-4" key={label}>
             <label className="block text-sm font-medium mb-1">{label}</label>
             <input
               className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
               value={state}
-              onChange={e => setter(e.target.value)}
+              onChange={(e) => setter(e.target.value)}
               placeholder={`Descreva ${label.toLowerCase()}…`}
             />
           </div>
         ))}
         {/* Observações */}
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-1">Observações adicionais</label>
+          <label className="block text-sm font-medium mb-1">
+            Observações adicionais
+          </label>
           <textarea
             className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
             value={observations}
-            onChange={e => setObservations(e.target.value)}
+            onChange={(e) => setObservations(e.target.value)}
             placeholder="Outras observações…"
           />
         </div>
@@ -361,7 +402,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </button>
         </div>
 
-        {/* Botão de envio ao paciente, somente secretaria */}
+        {/* Enviar para paciente (somente secretaria) */}
         {!isPatientVersion && (
           <div className="mb-4">
             <Button
@@ -375,7 +416,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Se versão paciente: concordância e assinatura */}
+        {/* Versão Paciente: concordância */}
         {isPatientVersion && (
           <>
             <label className="flex items-center gap-2 mb-4">
@@ -383,27 +424,31 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
                 type="checkbox"
                 className="accent-[#e11d48]"
                 checked={tcleChecked}
-                onChange={e => setTcleChecked(e.target.checked)}
+                onChange={(e) => setTcleChecked(e.target.checked)}
                 required
               />
-              <span className="text-xs">Li e concordo com o termo de consentimento.</span>
+              <span className="text-xs">
+                Li e concordo com o termo de consentimento.
+              </span>
             </label>
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-1">Nome completo</label>
+              <label className="block text-sm font-medium mb-1">
+                Nome completo
+              </label>
               <input
                 type="text"
                 required
                 disabled={!tcleChecked}
                 className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
                 value={fullName}
-                onChange={e => setFullName(e.target.value)}
+                onChange={(e) => setFullName(e.target.value)}
                 placeholder="Digite seu nome para assinar"
               />
             </div>
           </>
         )}
 
-        {/* Ações finais */}
+        {/* Ações */}
         <div className="flex gap-2">
           <Button
             type="submit"
@@ -424,10 +469,10 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           )}
         </div>
 
-        {/* Modais de edição/vizualização do termo e de compartilhamento */}
+        {/* Modal editar termo */}
         {isEditingTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+            <div className="bg-white rounded-lg p-6 w-full max-w-lg relative">
               <button
                 className="absolute top-4 right-4 text-[#e11d48]"
                 onClick={() => setIsEditingTerm(false)}
@@ -435,23 +480,29 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               >
                 <X size={24} />
               </button>
-              <h4 className="font-bold text-[#e11d48] mb-2">Editar Termo Completo</h4>
+              <h4 className="font-bold text-[#e11d48] mb-2">
+                Editar Termo Completo
+              </h4>
               <textarea
                 className="w-full border rounded p-2 text-sm mb-4 focus:border-[#e11d48]"
                 rows={8}
                 value={tcleContent}
-                onChange={e => setTcleContent(e.target.value)}
+                onChange={(e) => setTcleContent(e.target.value)}
               />
-              <Button className="bg-[#e11d48] text-white px-4 py-2" onClick={() => setIsEditingTerm(false)}>
+              <Button
+                className="bg-[#e11d48] text-white px-4 py-2"
+                onClick={() => setIsEditingTerm(false)}
+              >
                 Salvar Termo
               </Button>
             </div>
           </div>
         )}
 
+        {/* Modal visualizar termo completo */}
         {showFullTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
               <button
                 className="absolute top-4 right-4 text-[#e11d48]"
                 onClick={() => setShowFullTerm(false)}
@@ -463,16 +514,20 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               <div className="text-xs text-gray-700 mb-4 overflow-y-auto max-h-64 whitespace-pre-wrap">
                 {tcleContent}
               </div>
-              <Button className="bg-[#e11d48] text-white px-4 py-2" onClick={() => setShowFullTerm(false)}>
+              <Button
+                className="bg-[#e11d48] text-white px-4 py-2"
+                onClick={() => setShowFullTerm(false)}
+              >
                 Fechar
               </Button>
             </div>
           </div>
         )}
 
+        {/* Modal compartilhar */}
         {shareModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
               <button
                 className="absolute top-4 right-4 text-[#e11d48]"
                 onClick={() => setShareModalOpen(false)}
@@ -480,9 +535,17 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               >
                 <X size={24} />
               </button>
-              <h4 className="font-bold text-[#e11d48] mb-2">Compartilhar com Paciente</h4>
+              <h4 className="font-bold text-[#e11d48] mb-2">
+                Compartilhar com Paciente
+              </h4>
               <p className="text-xs text-gray-700 break-all mb-4">
-                Link: <a href={generateShareLink()} className="underline text-[#e11d48]">{generateShareLink()}</a>
+                Link:{" "}
+                <a
+                  href={generateShareLink()}
+                  className="underline text-[#e11d48]"
+                >
+                  {generateShareLink()}
+                </a>
               </p>
               <div className="flex gap-2">
                 <Button
