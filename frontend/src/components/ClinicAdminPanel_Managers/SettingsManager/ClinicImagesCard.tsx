@@ -3,6 +3,7 @@ import { Button } from "../../ui/button";
 import { Image as ImageIcon, Upload, X } from "lucide-react";
 import { fetchClinicSettings, updateClinicImages } from "../../../api";
 import { ClinicInfoData } from "../types";
+import { fileUrl } from "../../../api/apiBase";
 
 const MAX_GALLERY_IMAGES = 6;
 
@@ -23,7 +24,7 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
 }) => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
-  const [removeCoverImageFlag, setRemoveCoverImageFlag] = useState(false);
+  const [removeCoverImageFlag, setRemoveCoverImageFlag] = useState(false); // (ainda não enviado ao backend)
 
   const [galleryImages, setGalleryImages] = useState<GalleryImageObj[]>([]);
   const [galleryUrlsToRemove, setGalleryUrlsToRemove] = useState<string[]>([]);
@@ -47,19 +48,34 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
     });
   }, [clinicId]);
 
-  const getDisplayImageUrl = (url: string | null): string | null => {
-    if (!url) return null;
-    if (url.startsWith('blob:') || url.startsWith('http:') || url.startsWith('https:')) {
-      return url;
+  /**
+   * Normaliza URL para exibição:
+   * - blob:/data:/http(s) não-localhost => retorna como está
+   * - http(s) localhost => substitui host usando fileUrl()
+   * - caminhos relativos ou nomes => fileUrl()
+   */
+  const getDisplayImageUrl = (raw: string | null): string | null => {
+    if (!raw) return null;
+
+    if (/^(blob:|data:|https?:)/i.test(raw)) {
+      try {
+        const u = new URL(raw);
+        if (u.host.includes("localhost")) {
+          return fileUrl(u.pathname + u.search);
+        }
+        return raw;
+      } catch {
+        return raw;
+      }
     }
-    return `http://localhost:3001${url.startsWith('/') ? url : `/${url}`}`;
+    return fileUrl(raw);
   };
 
   const handleClinicCoverChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setCoverImageFile(file);
-      setCoverImageUrl(URL.createObjectURL(file));
+      setCoverImageUrl(URL.createObjectURL(file)); // preview local
       setRemoveCoverImageFlag(false);
     }
   };
@@ -67,23 +83,24 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
   const handleRemoveExistingCoverImage = () => {
     setCoverImageFile(null);
     setCoverImageUrl(null);
-    setRemoveCoverImageFlag(true);
+    setRemoveCoverImageFlag(true); // atualmente não enviado; manter comportamento anterior
   };
 
-  // Galeria: adiciona imagens sem ultrapassar o limite
+  // Adicionar imagens na galeria respeitando limite
   const handleClinicGalleryAdd = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      const currentTotalImages =
-        galleryImages.filter(img => !galleryUrlsToRemove.includes(img.url)).length;
-      if (currentTotalImages + files.length > MAX_GALLERY_IMAGES) {
+      const currentTotal =
+        galleryImages.filter((img) => !galleryUrlsToRemove.includes(img.url)).length;
+
+      if (currentTotal + files.length > MAX_GALLERY_IMAGES) {
         alert(`Você pode ter no máximo ${MAX_GALLERY_IMAGES} imagens na galeria.`);
-        const slotsAvailable = MAX_GALLERY_IMAGES - currentTotalImages;
+        const slotsAvailable = MAX_GALLERY_IMAGES - currentTotal;
         if (slotsAvailable > 0) {
-          const filesToAdd = files.slice(0, slotsAvailable);
-          setGalleryImages(prev => [
+          const slice = files.slice(0, slotsAvailable);
+          setGalleryImages((prev) => [
             ...prev,
-            ...filesToAdd.map((file) => ({
+            ...slice.map((file) => ({
               url: URL.createObjectURL(file),
               file,
               isNew: true,
@@ -91,48 +108,48 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
           ]);
         }
       } else {
-        setGalleryImages(prev => [
+        setGalleryImages((prev) => [
           ...prev,
-          ...files.map((file) => ({
-            url: URL.createObjectURL(file),
-            file,
-            isNew: true,
-          })),
+            ...files.map((file) => ({
+              url: URL.createObjectURL(file),
+              file,
+              isNew: true,
+            })),
         ]);
       }
+      // Permitir selecionar novamente os mesmos arquivos
       e.target.value = "";
     }
   };
 
-  // Galeria: remove imagem, marcando as do servidor para remoção
+  // Remover imagem da galeria (marca para remoção se existia no servidor)
   const handleClinicGalleryRemove = (urlOrIndex: string | number) => {
     if (typeof urlOrIndex === "string") {
-      setGalleryImages(prev => prev.filter(img => img.url !== urlOrIndex));
-      const img = galleryImages.find(img => img.url === urlOrIndex);
+      setGalleryImages((prev) => prev.filter((img) => img.url !== urlOrIndex));
+      const img = galleryImages.find((img) => img.url === urlOrIndex);
       if (img && !img.isNew) {
-        setGalleryUrlsToRemove(prev => [...prev, urlOrIndex]);
+        setGalleryUrlsToRemove((prev) => [...prev, urlOrIndex]);
       }
     } else {
-      setGalleryImages(prev => prev.filter((_, idx) => idx !== urlOrIndex));
+      setGalleryImages((prev) => prev.filter((_, idx) => idx !== urlOrIndex));
     }
   };
 
-  // Salvar apenas imagens (capa e galeria)
+  // Salvar (capa + galeria)
   const handleSaveImages = async () => {
     setSavingImages(true);
     setSuccessMessage(null);
     setErrorMessage(null);
 
-    // **Primeiro: tente apenas o upload**
     try {
       const existingGalleryUrls = galleryImages
-        .filter(img => !img.isNew)
-        .filter(img => !galleryUrlsToRemove.includes(img.url))
-        .map(img => img.url);
+        .filter((img) => !img.isNew)
+        .filter((img) => !galleryUrlsToRemove.includes(img.url))
+        .map((img) => img.url);
 
       const newGalleryImageFiles = galleryImages
-        .filter(img => img.isNew)
-        .map(img => img.file!)
+        .filter((img) => img.isNew)
+        .map((img) => img.file!)
         .filter(Boolean);
 
       await updateClinicImages(clinicId, {
@@ -140,21 +157,21 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
         galleryImageFiles: newGalleryImageFiles,
         existingGalleryUrlsJSON: JSON.stringify(existingGalleryUrls),
         galleryUrlsToRemoveJSON: JSON.stringify(galleryUrlsToRemove),
-        galleryUrls: galleryImages.map(img => img.url),
+        galleryUrls: galleryImages.map((img) => img.url),
+        // removeCoverImage removido para evitar erro de tipo (Opção 1)
       });
 
       setCoverImageFile(null);
       setGalleryUrlsToRemove([]);
       setSuccessMessage("Imagens salvas com sucesso!");
     } catch (err) {
-      // Mostre o erro real no console para debug
       console.error("Erro ao salvar imagens:", err);
       setErrorMessage("Erro ao salvar imagens.");
       setSavingImages(false);
       return;
     }
 
-    // **Só depois: tente refazer o fetch das imagens**
+    // Recarregar dados após salvar
     try {
       const data: any = await fetchClinicSettings(clinicId);
       setCoverImageUrl(data.coverUrl ?? null);
@@ -165,19 +182,20 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
         }))
       );
     } catch (err) {
-      // Não exibe erro ao usuário, mas loga para debug
       console.error("Erro ao atualizar imagens após salvar:", err);
     } finally {
       setSavingImages(false);
     }
   };
 
-  // Array de URLs para exibir na galeria
-  const galleryImageUrls = galleryImages.map(img => img.url);
+  const galleryImageUrls = galleryImages.map((img) => img.url);
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-gray-100 p-8">
-      <h2 className="text-xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-3">Imagens da Clínica</h2>
+      <h2 className="text-xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-3">
+        Imagens da Clínica
+      </h2>
+
       {successMessage && (
         <div className="p-2 mb-3 text-green-800 bg-green-50 border border-green-200 rounded">
           {successMessage}
@@ -188,13 +206,20 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
           {errorMessage}
         </div>
       )}
+
       <div className="flex flex-col md:flex-row gap-10">
         {/* Capa */}
         <div className="flex-1 min-w-[230px]">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Imagem de Capa</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Imagem de Capa
+          </label>
           <div className="relative w-full aspect-[16/9] border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center overflow-hidden bg-gray-100 group transition-shadow duration-200 hover:shadow-lg">
             {coverImageUrl && getDisplayImageUrl(coverImageUrl) ? (
-              <img src={getDisplayImageUrl(coverImageUrl)!} alt="Capa da Clínica" className="w-full h-full object-cover" />
+              <img
+                src={getDisplayImageUrl(coverImageUrl)!}
+                alt="Capa da Clínica"
+                className="w-full h-full object-cover"
+              />
             ) : (
               <ImageIcon className="h-16 w-16 text-gray-300" />
             )}
@@ -206,21 +231,36 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
                 <Upload className="h-7 w-7 mb-1" />
                 <span className="text-sm font-medium">Alterar Capa</span>
               </span>
-              <input id="clinic-cover-upload" type="file" accept="image/*" className="sr-only" onChange={handleClinicCoverChange} />
+              <input
+                id="clinic-cover-upload"
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={handleClinicCoverChange}
+              />
             </label>
           </div>
           {coverImageUrl && (
-            <button className="inline-flex items-center gap-1 px-3 py-1.5 mt-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-medium"
-              onClick={handleRemoveExistingCoverImage} type="button">
+            <button
+              className="inline-flex items-center gap-1 px-3 py-1.5 mt-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-medium"
+              onClick={handleRemoveExistingCoverImage}
+              type="button"
+            >
               <X className="h-4 w-4" /> Remover Capa
             </button>
           )}
-          <p className="text-xs text-gray-400 mt-2">Recomendado: 1200x675px. PNG/JPG até 2MB.</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Recomendado: 1200x675px. PNG/JPG até 2MB.
+          </p>
         </div>
+
         {/* Galeria */}
         <div className="flex-1 min-w-[230px]">
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Galeria de Imagens <span className="font-normal text-gray-500">({galleryImageUrls.length}/{MAX_GALLERY_IMAGES})</span>
+            Galeria de Imagens{" "}
+            <span className="font-normal text-gray-500">
+              ({galleryImageUrls.length}/{MAX_GALLERY_IMAGES})
+            </span>
           </label>
           <div className="flex flex-wrap gap-3">
             {galleryImageUrls.map((imgUrl, idx) => (
@@ -244,14 +284,25 @@ const ClinicImagesCard: React.FC<ClinicImagesCardProps> = ({
             {galleryImageUrls.length < MAX_GALLERY_IMAGES && (
               <label className="w-24 h-24 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-pointer hover:border-[#e11d48] hover:text-[#e11d48] transition-colors text-gray-400">
                 <Upload className="h-7 w-7 mb-1" />
-                <span className="text-xs font-medium text-center">Adicionar</span>
-                <input type="file" accept="image/*" multiple className="sr-only" onChange={handleClinicGalleryAdd} />
+                <span className="text-xs font-medium text-center">
+                  Adicionar
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={handleClinicGalleryAdd}
+                />
               </label>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-2">Máximo de {MAX_GALLERY_IMAGES} imagens. PNG/JPG até 2MB cada.</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Máximo de {MAX_GALLERY_IMAGES} imagens. PNG/JPG até 2MB cada.
+          </p>
         </div>
       </div>
+
       <div className="flex gap-2 justify-end mt-8">
         <Button
           type="button"
