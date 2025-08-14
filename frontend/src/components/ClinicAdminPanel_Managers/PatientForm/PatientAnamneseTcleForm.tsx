@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "../../ui/button";
 import { X, Edit, Send } from "lucide-react";
-import { apiUrl, fileUrl } from "../../../api/apiBase"; // <- centraliza base (remove localhost hardcode)
+import { API_BASE_URL, fileUrl } from "../../../api/apiBase";
 
 interface AnamneseTcleFormProps {
   patientId: number;
@@ -29,12 +29,12 @@ const PRE_EXISTING_DISEASES = [
 
 const DEFAULT_TCLE = `Declaro que fui informado(a) sobre o atendimento clínico e consinto, de forma livre e esclarecida, à realização dos procedimentos propostos.`;
 
-// Utilidades
+// Utils
 function getClinicId(): string | null {
   return localStorage.getItem("clinic_id");
 }
 
-// Normaliza foto (remove localhost se vier absoluto de desenvolvimento)
+// Normaliza foto (retira localhost caso venha absoluto)
 function getNormalizedPhotoUrl(photo?: string | null): string | undefined {
   if (!photo) return undefined;
   const v = photo.trim();
@@ -51,11 +51,53 @@ function getNormalizedPhotoUrl(photo?: string | null): string | undefined {
       return v;
     }
   }
-
   if (v.startsWith("/uploads/")) return fileUrl(v);
   if (v.startsWith("uploads/")) return fileUrl("/" + v);
   if (v.startsWith("/")) return fileUrl(v);
   return fileUrl("/uploads/" + v);
+}
+
+// Constrói URL absoluta segura, removendo barras duplicadas
+function joinBase(path: string): string {
+  const base = (API_BASE_URL || "").replace(/\/+$/, "");
+  const p = path.replace(/^\/+/, "");
+  return `${base}/${p}`.replace(/([^:]\/)\/+/g, "$1");
+}
+
+/**
+ * Faz fetch em um endpoint de pacientes tentando primeiro sem /api, depois com /api (se 404/405).
+ */
+async function fetchWithPatientsFallback(
+  relativeCore: string,
+  init?: RequestInit
+): Promise<Response> {
+  const variants = [
+    // prioridade conforme comentário no apiBase: sem /api
+    joinBase(relativeCore),
+    joinBase("api/" + relativeCore),
+  ];
+
+  let lastRes: Response | undefined;
+  for (let i = 0; i < variants.length; i++) {
+    const url = variants[i];
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+      // Se for o primeiro e der 404/405, tenta próximo
+      if (i === 0 && (res.status === 404 || res.status === 405)) {
+        lastRes = res;
+        continue;
+      }
+      return res; // retorna mesmo que não ok (para tratar depois)
+    } catch (e) {
+      // Se falhou rede na primeira, tenta segunda
+      if (i === 0) continue;
+      throw e;
+    }
+  }
+  // Se chegou aqui, retorna o último (ou lança)
+  if (lastRes) return lastRes;
+  throw new Error("Falha ao tentar endpoints fallback de pacientes.");
 }
 
 const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
@@ -100,10 +142,17 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
 
     async function fetchAnamnese() {
       try {
-        const endpoint =
-          apiUrl(`patients/${patientId}/anamnese`) + `?clinicId=${clinicId}`;
-        const res = await fetch(endpoint);
-        if (!res.ok) return;
+        const query = `patients/${patientId}/anamnese?clinicId=${clinicId}`;
+        const res = await fetchWithPatientsFallback(query);
+        if (!res.ok) {
+          console.warn(
+            "[Anamnese] Falha ao carregar:",
+            res.status,
+            "tentado path:",
+            query
+          );
+          return;
+        }
         const data = await res.json();
 
         // Preenche campos da anamnese
@@ -136,8 +185,8 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         setTcleContent(data.tcle || DEFAULT_TCLE);
         setTcleChecked(Boolean(data.tcle_concordado));
         setFullName(data.tcle_nome || "");
-      } catch {
-        // Silenciar erros de fetch
+      } catch (e) {
+        console.warn("[Anamnese] Erro fetchAnamnese:", e);
       }
     }
 
@@ -202,9 +251,8 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
     };
 
     try {
-      const endpoint =
-        apiUrl(`patients/${patientId}/anamnese`) + `?clinicId=${clinicId}`;
-      const res = await fetch(endpoint, {
+      const query = `patients/${patientId}/anamnese?clinicId=${clinicId}`;
+      const res = await fetchWithPatientsFallback(query, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(anamneseData),
@@ -214,7 +262,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         let erroMsg = "";
         try {
           const erro = await res.json();
-            erroMsg = erro.message || res.status.toString();
+          erroMsg = erro.message || res.status.toString();
         } catch {
           erroMsg = res.status.toString();
         }
@@ -224,7 +272,8 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         onSave && (await onSave(anamneseData));
         onCancel && onCancel();
       }
-    } catch {
+    } catch (e) {
+      console.error("[Anamnese] Erro ao salvar:", e);
       alert("Erro de conexão ao salvar anamnese.");
     } finally {
       setSubmitting(false);
@@ -274,9 +323,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         {/* Foto + Nome */}
         <div className="flex items-center gap-3 mb-6">
           <div className="relative w-16 h-16 rounded-full border-2 border-white shadow-lg bg-gray-200 overflow-hidden">
-            {normalizedPhotoUrl ? (
+            {getNormalizedPhotoUrl(patientPhotoUrl) ? (
               <img
-                src={normalizedPhotoUrl}
+                src={getNormalizedPhotoUrl(patientPhotoUrl)}
                 alt=""
                 className="object-cover w-full h-full"
               />
@@ -289,11 +338,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
 
         {/* Seções do formulário */}
         <h3 className="text-lg font-bold text-[#344055] mb-3">Anamnese</h3>
-        {/* Queixa principal */}
+
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">
-            Queixa principal
-          </label>
+          <label className="block text-sm font-medium mb-1">Queixa principal</label>
           <textarea
             required
             className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
@@ -302,11 +349,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
             placeholder="Descreva a queixa principal"
           />
         </div>
-        {/* Pré-existentes */}
+
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">
-            Doenças pré-existentes
-          </label>
+          <label className="block text-sm font-medium mb-1">Doenças pré-existentes</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {PRE_EXISTING_DISEASES.map((opt) => (
               <label
@@ -334,26 +379,14 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
             />
           </div>
         </div>
-        {/* Outros campos */}
+
         {[
           { label: "Alergias", state: allergies, setter: setAllergies },
-          {
-            label: "Medicamentos em uso",
-            state: medications,
-            setter: setMedications,
-          },
-          {
-            label: "Histórico de cirurgias",
-            state: surgicalHistory,
-            setter: setSurgicalHistory,
-          },
-          {
-            label: "Histórico familiar",
-            state: familyHistory,
-            setter: setFamilyHistory,
-          },
+          { label: "Medicamentos em uso", state: medications, setter: setMedications },
+          { label: "Histórico de cirurgias", state: surgicalHistory, setter: setSurgicalHistory },
+          { label: "Histórico familiar", state: familyHistory, setter: setFamilyHistory },
           { label: "Estilo de vida", state: lifestyle, setter: setLifestyle },
-            { label: "Hábitos (fumo, álcool)", state: habits, setter: setHabits },
+          { label: "Hábitos (fumo, álcool)", state: habits, setter: setHabits },
         ].map(({ label, state, setter }) => (
           <div className="mb-4" key={label}>
             <label className="block text-sm font-medium mb-1">{label}</label>
@@ -365,11 +398,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
             />
           </div>
         ))}
-        {/* Observações */}
+
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-1">
-            Observações adicionais
-          </label>
+          <label className="block text-sm font-medium mb-1">Observações adicionais</label>
           <textarea
             className="w-full border rounded p-2 text-sm focus:border-[#e11d48]"
             value={observations}
@@ -378,7 +409,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           />
         </div>
 
-        {/* TCLE */}
         <h3 className="text-lg font-bold text-[#344055] mb-2 flex items-center">
           TCLE
           <Button
@@ -402,7 +432,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </button>
         </div>
 
-        {/* Enviar para paciente (somente secretaria) */}
         {!isPatientVersion && (
           <div className="mb-4">
             <Button
@@ -416,7 +445,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Versão Paciente: concordância */}
         {isPatientVersion && (
           <>
             <label className="flex items-center gap-2 mb-4">
@@ -427,14 +455,10 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
                 onChange={(e) => setTcleChecked(e.target.checked)}
                 required
               />
-              <span className="text-xs">
-                Li e concordo com o termo de consentimento.
-              </span>
+              <span className="text-xs">Li e concordo com o termo de consentimento.</span>
             </label>
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-1">
-                Nome completo
-              </label>
+              <label className="block text-sm font-medium mb-1">Nome completo</label>
               <input
                 type="text"
                 required
@@ -448,7 +472,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </>
         )}
 
-        {/* Ações */}
         <div className="flex gap-2">
           <Button
             type="submit"
@@ -469,7 +492,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           )}
         </div>
 
-        {/* Modal editar termo */}
         {isEditingTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-lg relative">
@@ -480,9 +502,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               >
                 <X size={24} />
               </button>
-              <h4 className="font-bold text-[#e11d48] mb-2">
-                Editar Termo Completo
-              </h4>
+              <h4 className="font-bold text-[#e11d48] mb-2">Editar Termo Completo</h4>
               <textarea
                 className="w-full border rounded p-2 text-sm mb-4 focus:border-[#e11d48]"
                 rows={8}
@@ -499,7 +519,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Modal visualizar termo completo */}
         {showFullTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
@@ -524,7 +543,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Modal compartilhar */}
         {shareModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
