@@ -8,7 +8,9 @@ export interface Professional {
   specialty: string;
   photo: string;
   available: boolean;
-  clinic_id: number; // snake_case vindo do backend
+  // Campo vindo do backend em snake_case; normalizar para clinicId quando consumir.
+  clinic_id?: number;
+  clinicId?: number;
   email?: string;
   phone?: string;
   resume?: string;
@@ -20,7 +22,7 @@ export interface NewProfessionalData {
   specialty: string;
   photo: string;
   available: boolean;
-  clinicId: number;      // camelCase para envio ao backend
+  clinicId: number; // camelCase para envio
   email?: string;
   phone?: string;
   resume?: string;
@@ -31,68 +33,92 @@ export interface NewProfessionalData {
 // AGENDAMENTOS
 // =============================================================
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
+export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
 
 /**
- * Forma "crua" (RawAppointment) aceita múltiplas variações de nome
- * que podem vir do backend (snake + camel). Use um mapper para
- * normalizar em Appointment (normalizado).
+ * Forma crua que pode vir do backend (múltiplas variações).
+ * Usada APENAS como input para normalização.
  */
 export interface RawAppointment {
   id: number | string;
   patientId?: number | null;
   patient_id?: number | null;
-  patient_name?: string;
   patientName?: string;
-  patient_phone?: string;
+  patient_name?: string;
+  patient_name_full?: string;
   patientPhone?: string;
-  service_id?: number;
-  serviceId?: number;
-  service?: string;
+  patient_phone?: string;
+
+  serviceId?: number | string | null;
+  service_id?: number | string | null;
+  serviceName?: string;
   service_name?: string;
-  professional_id?: number;
-  professionalId?: number;
+  service?: string;
+
+  professionalId?: number | string | null;
+  professional_id?: number | string | null;
+  professionalIdLegacy?: number | string | null;
+  professionalName?: string;
   professional_name?: string;
+  professional?: string;
+
   date?: string;
   time?: string;
   endTime?: string;
+  end_time?: string;
+  endtime?: string;
+
   status?: AppointmentStatus | string;
   notes?: string;
+
   created_at?: string;
   updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
+
   startUTC?: string;
+  start_utc?: string;
+  endUTC?: string;
+  end_utc?: string;
+  utc_date_time?: string;
+  utcDateTime?: string;
+
+  [key: string]: any; // tolera extras
 }
 
 /**
- * Forma normalizada que o front DEVERIA usar internamente.
- * (Pode gradualmente substituir o uso direto de campos snake/camel mistos.)
+ * Forma normalizada: usar somente esta internamente.
  */
 export interface Appointment {
   id: number;
   patientId?: number;
-  patientName?: string;
+  patientName: string;         // tornar obrigatório simplifica renderizações
   patientPhone?: string;
+
   serviceId?: number;
-  serviceName?: string;             // nome único normalizado
+  serviceName?: string;
+  service?: string;            // opcional (pode remover depois se for redundante)
+
   professionalId: number;
   professionalName?: string;
-  date: string;                      // YYYY-MM-DD
-  time: string;                      // HH:MM
-  endTime?: string;                  // HH:MM
+
+  date: string;                // YYYY-MM-DD
+  time: string;                // HH:MM
+  endTime?: string;            // HH:MM
+
   status: AppointmentStatus;
   notes?: string;
+
   createdAt?: string;
   updatedAt?: string;
+
   startUTC?: string;
-  // Campos legados (opcional manter enquanto não limpa tudo)
-  service?: string;
-  service_name?: string;
-  professional_name?: string;
+  endUTC?: string;
+  utcDateTime?: Date;          // enriquecido no front (derivado)
 }
 
 /**
- * Dados para criar/atualizar (sem id). Se quiser tornar status opcional
- * (com fallback 'pending'), deixe status?: AppointmentStatus.
+ * Dados para criar/atualizar (sem id).
  */
 export interface NewAppointmentData {
   patientId?: number | null;
@@ -109,9 +135,7 @@ export interface NewAppointmentData {
 }
 
 /**
- * SubmittedFormData usado pelo form de agendamento.
- * Tornamos status opcional para permitir fallback no código.
- * Incluímos endTime e notes para não gerar erros ao referenciar.
+ * Dados submetidos pelo formulário (status opcional para fallback).
  */
 export interface SubmittedFormData {
   patientId?: number | null;
@@ -126,18 +150,10 @@ export interface SubmittedFormData {
   notes?: string;
 }
 
-/**
- * ScheduleModalFormData (caso seja usado em outro local).
- * Pode simplesmente ser um alias de SubmittedFormData + id:
- */
 export interface ScheduleModalFormData extends SubmittedFormData {
   id?: number;
 }
 
-/**
- * Função util esperada para mapear RawAppointment -> Appointment.
- * (Implementação fica em outro arquivo, mas o tipo ajuda.)
- */
 export type AppointmentMapper = (raw: RawAppointment) => Appointment;
 
 // =============================================================
@@ -148,7 +164,7 @@ export interface ProcedureImage {
   id: number;
   url: string;
   fileName?: string;
-  procedure_id?: number;
+  procedure_id?: number; // vindo do backend
 }
 
 export interface Procedure {
@@ -170,7 +186,7 @@ export interface Evolution {
   tcle: string;
   patientId: number;
   professionalId: number;
-  tcle_concordado: boolean;
+  tcle_concordado: boolean; // manter se backend envia snake_case
   tcle_nome: string;
   tcle_data_hora: string;
   createdAt: string;
@@ -193,7 +209,7 @@ export interface Patient {
   evolutions?: Evolution[];
   anamnesis?: string;
   tcle?: string;
-  appointments?: Appointment[]; // já usando forma normalizada
+  appointments?: Appointment[];
 }
 
 // =============================================================
@@ -207,7 +223,7 @@ export interface Service {
   value: string;
   description?: string;
 }
-export type NewServiceData = Omit<Service, 'id'>;
+export type NewServiceData = Omit<Service, "id">;
 
 // =============================================================
 // ESTOQUE
@@ -222,15 +238,16 @@ export interface StockItem {
   unit: string;
   updatedAt: string;
   validity?: string;
-  clinicId?: number; // opcional (interno) se precisar identificar a clínica
+  clinicId?: number;
 }
 
-export type NewStockItemData = Omit<StockItem, 'id' | 'updatedAt'> & {
+export type NewStockItemData = Omit<StockItem, "id" | "updatedAt"> & {
   updatedAt?: string;
 };
 
 // =============================================================
 // INFORMAÇÕES INSTITUCIONAIS DA CLÍNICA
+// (Aqui ainda há snake_case vindo do backend; considere normalizar depois.)
 // =============================================================
 
 export interface ClinicInfoData {
@@ -255,10 +272,12 @@ export interface ClinicInfoData {
   longitude_address?: number | null;
   latitude_map?: number | null;
   longitude_map?: number | null;
+  latitude?: number | null;   // se decidir normalizar
+  longitude?: number | null;  // se decidir normalizar
 }
 
 // =============================================================
-// AUXILIARES PARA CALENDÁRIO / EVENTOS
+// EVENTOS DE CALENDÁRIO
 // =============================================================
 
 export interface EventForCalendar {

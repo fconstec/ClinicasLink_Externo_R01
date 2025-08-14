@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import type { SubmittedFormData, Service } from "./types";
+import type { SubmittedFormData } from "./types";
 import { WORK_HOURS, getValidDate, getValidTime, getNextWorkHour } from "./utils";
 import { usePatientSearch } from "./usePatientSearch";
 import PatientField from "./PatientField";
 import ServiceField from "./ServiceField";
 import ProfessionalField from "./ProfessionalField";
 import StatusField from "./StatusField";
-import type { Appointment } from "../ClinicAdminPanel_Managers/types";
+import type { Service, AppointmentStatus } from "../ClinicAdminPanel_Managers/types";
 
 interface Props {
   clinicId: number;
@@ -48,44 +48,43 @@ export default function ScheduleForm({
 
   const [date, setDate] = useState<string>(getValidDate(initialData?.date || initialDateProp));
   const [time, setTime] = useState<string>(getValidTime(initialData?.time || initialTimeProp));
-  // Ajuste: endTime sempre >= time, valor inicial sugerido
   const [endTime, setEndTime] = useState<string>(
     getValidTime(
       initialData?.endTime ||
-      initialEndTimeProp ||
-      getNextWorkHour(initialData?.time || initialTimeProp || WORK_HOURS[0])
+        initialEndTimeProp ||
+        getNextWorkHour(initialData?.time || initialTimeProp || WORK_HOURS[0])
     )
   );
-  const [status, setStatus] = useState<Appointment["status"]>(initialData?.status || "pending");
+  const [status, setStatus] = useState<AppointmentStatus>(initialData?.status || "pending");
 
   useEffect(() => {
-    // Sempre garantir endTime > time ao preencher/editar
     let nextEndTime = "";
     if (initialData) {
       setSearch(initialData.patientName || "");
       setPatientName(initialData.patientName || "");
       setPatientPhone(initialData.patientPhone || "");
       setPatientId(initialData.patientId);
+      const initProf = Number(initialData.professionalId);
       setProfessionalId(
-        initialData.professionalId &&
-          professionals.some((p) => p.id === initialData.professionalId)
-          ? initialData.professionalId
+        initProf &&
+        professionals.some((p) => p.id === initProf)
+          ? initProf
           : ""
       );
+      const initServ = Number(initialData.serviceId);
       setServiceId(
-        initialData.serviceId &&
-          services.some((s) => s.id === initialData.serviceId)
-          ? initialData.serviceId
+        initServ &&
+        services.some((s) => s.id === initServ)
+          ? initServ
           : ""
       );
       setDate(getValidDate(initialData.date));
       setTime(getValidTime(initialData.time));
-      nextEndTime =
-        getValidTime(
-          initialData.endTime ||
+      nextEndTime = getValidTime(
+        initialData.endTime ||
           initialEndTimeProp ||
           getNextWorkHour(initialData.time || WORK_HOURS[0])
-        );
+      );
       setEndTime(nextEndTime);
       setStatus(initialData.status || "pending");
       setIsNewPatient(!initialData.patientId);
@@ -101,11 +100,9 @@ export default function ScheduleForm({
       setServiceId(initialServiceIdProp ?? (services[0]?.id ?? ""));
       setDate(getValidDate(initialDateProp));
       setTime(getValidTime(initialTimeProp));
-      nextEndTime =
-        getValidTime(
-          initialEndTimeProp ||
-          getNextWorkHour(initialTimeProp || WORK_HOURS[0])
-        );
+      nextEndTime = getValidTime(
+        initialEndTimeProp || getNextWorkHour(initialTimeProp || WORK_HOURS[0])
+      );
       setEndTime(nextEndTime);
       setStatus("pending");
     }
@@ -120,13 +117,12 @@ export default function ScheduleForm({
     services,
   ]);
 
-  // Sincroniza endTime automaticamente ao mudar time
+  // Ajusta endTime automaticamente se ficar <= time
   useEffect(() => {
-    // Se endTime for menor ou igual ao novo time, sugere o próximo horário válido
     if (WORK_HOURS.indexOf(endTime) <= WORK_HOURS.indexOf(time)) {
       setEndTime(getNextWorkHour(time));
     }
-  }, [time]);
+  }, [time, endTime]);
 
   const {
     patientOptions,
@@ -140,6 +136,7 @@ export default function ScheduleForm({
     const trimmed = patientName.trim();
     const profNum = Number(professionalId);
     const servNum = Number(serviceId);
+
     const missing: string[] = [];
     if (!trimmed) missing.push("Paciente");
     if (isNaN(profNum) || profNum <= 0) missing.push("Profissional");
@@ -147,7 +144,6 @@ export default function ScheduleForm({
     if (!date) missing.push("Data");
     if (!time) missing.push("Hora início");
     if (!endTime) missing.push("Hora fim");
-    if (!status) missing.push("Status");
     if (WORK_HOURS.indexOf(endTime) <= WORK_HOURS.indexOf(time)) {
       missing.push("Hora final deve ser maior que a inicial");
     }
@@ -157,22 +153,24 @@ export default function ScheduleForm({
       return;
     }
 
-    // Adiciona o nome do serviço ao objeto enviado para o backend
     const selectedService = services.find(s => s.id === servNum);
 
-    onSubmit({
-      id: initialData?.id,
+    const payload: SubmittedFormData = {
+      id: initialData?.id ? Number(initialData.id) : undefined,
       patientId,
       patientName: trimmed,
       patientPhone,
       professionalId: profNum,
       serviceId: servNum,
-      service: selectedService?.name ?? "", // <-- ESSENCIAL!
+      serviceName: selectedService?.name ?? "",
       date,
       time,
-      endTime, // <-- ESSENCIAL!
-      status,
-    });
+      endTime,
+      status, // status é obrigatório agora
+      notes: initialData?.notes,
+    };
+
+    onSubmit(payload);
   }
 
   return (
@@ -222,7 +220,6 @@ export default function ScheduleForm({
         />
       </div>
 
-      {/* Data e Status na mesma linha */}
       <div className="flex gap-2">
         <div className="flex-1">
           <label className="block text-xs text-[#344055] font-medium mb-1">
@@ -241,24 +238,23 @@ export default function ScheduleForm({
         </div>
       </div>
 
-      {/* Hora início e Hora fim na mesma linha */}
       <div className="flex gap-2">
         <div className="flex-1">
           <label className="block text-xs text-[#344055] font-medium mb-1">
             Hora início*
           </label>
-          <select
-            value={time}
-            onChange={e => setTime(e.target.value)}
-            className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
-            required
-          >
-            {WORK_HOURS.map((h) => (
-              <option key={h} value={h}>
-                {h}
-              </option>
-            ))}
-          </select>
+            <select
+              value={time}
+              onChange={e => setTime(e.target.value)}
+              className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
+              required
+            >
+              {WORK_HOURS.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
         </div>
         <div className="flex-1">
           <label className="block text-xs text-[#344055] font-medium mb-1">

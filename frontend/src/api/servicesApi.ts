@@ -1,6 +1,8 @@
 import { buildApiUrl, defaultJsonHeaders } from "./apiPrefix";
 import type { Service, NewServiceData } from "../components/ClinicAdminPanel_Managers/types";
 
+type ClinicId = number | string;
+
 /**
  * Normaliza objeto cru em Service.
  */
@@ -29,8 +31,9 @@ async function parseOrThrow(res: Response, context: string) {
 /**
  * Lista serviços da clínica.
  */
-export async function fetchServices(clinicId?: string): Promise<Service[]> {
-  const url = await buildApiUrl("services", clinicId ? { clinicId } : undefined);
+export async function fetchServices(clinicId?: ClinicId): Promise<Service[]> {
+  const query = clinicId != null ? { clinicId: String(clinicId) } : undefined;
+  const url = await buildApiUrl("services", query);
   const res = await fetch(url);
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
@@ -46,15 +49,17 @@ export async function fetchServices(clinicId?: string): Promise<Service[]> {
 
 /**
  * Cria serviço.
+ * Mantemos clinicId junto no body se o backend espera dessa forma.
  */
 export async function addService(
-  data: NewServiceData & { clinicId: string }
+  data: NewServiceData & { clinicId: ClinicId }
 ): Promise<Service> {
+  const payload = { ...data, clinicId: String(data.clinicId) };
   const url = await buildApiUrl("services");
   const res = await fetch(url, {
     method: "POST",
     headers: defaultJsonHeaders(),
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
   const json = await parseOrThrow(res, "addService");
   return mapService(json);
@@ -65,13 +70,14 @@ export async function addService(
  */
 export async function updateService(
   id: number,
-  data: Omit<Service, "id"> & { clinicId: string }
+  data: Omit<Service, "id"> & { clinicId: ClinicId }
 ): Promise<Service> {
+  const payload = { ...data, clinicId: String(data.clinicId) };
   const url = await buildApiUrl(`services/${id}`);
   const res = await fetch(url, {
     method: "PUT",
     headers: defaultJsonHeaders(),
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
   const json = await parseOrThrow(res, "updateService");
   return mapService(json);
@@ -80,8 +86,8 @@ export async function updateService(
 /**
  * Remove serviço.
  */
-export async function deleteService(id: number, clinicId: string): Promise<void> {
-  const url = await buildApiUrl(`services/${id}`, { clinicId });
+export async function deleteService(id: number, clinicId: ClinicId): Promise<void> {
+  const url = await buildApiUrl(`services/${id}`, { clinicId: String(clinicId) });
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");

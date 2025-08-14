@@ -8,17 +8,26 @@ export interface PatientSearchResult {
   email?: string;
 }
 
+/**
+ * Dados consolidados submetidos pelo formulário de agendamento.
+ * Padronizamos IDs como number para evitar unions e simplificar validações.
+ * serviceName: opcional, apenas para exibição / logging (backend usa serviceId).
+ */
 export interface SubmittedFormData {
-  id?: number | string;
+  id?: number;
   patientId?: number;
+
   patientName: string;
   patientPhone?: string;
-  professionalId: number | string;
-  serviceId: number | string;
-  serviceName?: string; // ou 'service' se preferir manter nome antigo
-  date: string;
-  time: string;
-  endTime?: string;
-  status?: AppointmentStatus;
+
+  professionalId: number;
+  serviceId: number;
+  serviceName?: string;
+
+  date: string;       // YYYY-MM-DD
+  time: string;       // HH:mm
+  endTime?: string;   // HH:mm
+
+  status: AppointmentStatus; // manter obrigatório simplifica o restante do código
   notes?: string;
 }

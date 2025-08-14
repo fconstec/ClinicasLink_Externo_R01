@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from "react-router-dom";
-import HeaderPrivate from '@/components/HeaderPrivate'; // <-- Novo header privado!
+import HeaderPrivate from '@/components/HeaderPrivate';
 import SideMenu from './SideMenu';
 import DashboardTab from './DashboardTab';
 import CalendarTab from './CalendarTab';
@@ -23,13 +23,22 @@ import {
   updateStockItem,
   deleteStockItem
 } from '@/api';
-import type { Professional, Appointment, Service, Patient, StockItem, NewServiceData, NewStockItemData } from '@/components/ClinicAdminPanel_Managers/types';
+import type {
+  Professional,
+  Appointment,
+  Service,
+  Patient,
+  StockItem,
+  NewServiceData,
+  NewStockItemData
+} from '@/components/ClinicAdminPanel_Managers/types';
 
 const DEFAULT_CLINIC_NAME = "Minha Clínica";
 
 const ClinicAdminPanel: React.FC = () => {
   const { id: clinicIdParam } = useParams<{ id: string }>();
   const clinicId = clinicIdParam ? Number(clinicIdParam) : 0;
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -38,7 +47,7 @@ const ClinicAdminPanel: React.FC = () => {
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const navigate = useNavigate();
 
-  // Função para recarregar profissionais
+  // Recarrega profissionais
   const reloadProfessionals = async () => {
     if (!clinicIdParam) return;
     try {
@@ -49,7 +58,7 @@ const ClinicAdminPanel: React.FC = () => {
     }
   };
 
-  // Função para recarregar serviços
+  // Recarrega serviços
   const reloadServices = async () => {
     if (!clinicIdParam) return;
     try {
@@ -60,7 +69,7 @@ const ClinicAdminPanel: React.FC = () => {
     }
   };
 
-  // Função para recarregar estoque
+  // Recarrega estoque
   const reloadStock = async () => {
     if (!clinicIdParam) return;
     try {
@@ -71,30 +80,30 @@ const ClinicAdminPanel: React.FC = () => {
     }
   };
 
-  // Funções para adicionar, atualizar e deletar serviço (API)
+  // Serviços (API)
   const handleAddService = async (data: NewServiceData & { clinicId: number }) => {
-    return await addService({ ...data, clinicId: String(data.clinicId) });
+    return await addService({ ...data, clinicId: data.clinicId });
   };
 
   const handleUpdateService = async (id: number, data: NewServiceData & { clinicId: number }) => {
-    return await updateService(id, { ...data, clinicId: String(data.clinicId) });
+    return await updateService(id, { ...data, clinicId: data.clinicId });
   };
 
   const handleDeleteService = async (id: number, clinicId: number) => {
-    return await deleteService(id, String(clinicId));
+    return await deleteService(id, clinicId);
   };
 
-  // Funções para adicionar, atualizar e deletar estoque (API)
+  // Estoque (API)
   const handleAddStockItem = async (data: NewStockItemData & { clinicId: number }) => {
-    return await addStockItem({ ...data, clinicId: String(data.clinicId) });
+    return await addStockItem({ ...data, clinicId: data.clinicId });
   };
 
   const handleUpdateStockItem = async (id: number, data: NewStockItemData & { clinicId: number }) => {
-    return await updateStockItem(id, { ...data, clinicId: String(data.clinicId) });
+    return await updateStockItem(id, { ...data, clinicId: data.clinicId });
   };
 
   const handleDeleteStockItem = async (id: number, clinicId: number) => {
-    return await deleteStockItem(id, String(clinicId));
+    return await deleteStockItem(id, clinicId);
   };
 
   useEffect(() => {
@@ -104,7 +113,7 @@ const ClinicAdminPanel: React.FC = () => {
     fetchAppointments(clinicIdParam).then(setAppointments).catch(() => setAppointments([]));
     fetchPatients(clinicIdParam).then(setPatients).catch(() => setPatients([]));
     reloadStock();
-    // eslint-disable-next-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicIdParam]);
 
   if (!clinicId) {
@@ -122,9 +131,25 @@ const ClinicAdminPanel: React.FC = () => {
           onLogout={() => navigate('/')}
         />
         <div className="flex-1 p-4 sm:p-6 ml-0 md:ml-64">
-          {activeTab === 'dashboard' && <DashboardTab appointments={appointments} professionals={professionals} services={services} />}
-          {activeTab === 'calendar' && <CalendarTab professionals={professionals} services={services} />}
-          {activeTab === 'appointments' && <AppointmentsTab professionals={professionals} services={services} />}
+          {activeTab === 'dashboard' && (
+            <DashboardTab
+              appointments={appointments}
+              professionals={professionals}
+              services={services}
+            />
+          )}
+            {activeTab === 'calendar' && (
+              <CalendarTab
+                professionals={professionals}
+                services={services}
+              />
+            )}
+          {activeTab === 'appointments' && (
+            <AppointmentsTab
+              professionals={professionals}
+              services={services}
+            />
+          )}
           {activeTab === 'patients' && <PatientsTab />}
           {activeTab === 'professionals' && (
             <ProfessionalsTab

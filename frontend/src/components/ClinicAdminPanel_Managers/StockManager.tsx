@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Edit, Trash2, AlertTriangle, ArchiveRestore } from 'lucide-react'; 
+import React, { useState, useMemo } from 'react';
+import { Plus, Edit, Trash2, AlertTriangle, ArchiveRestore } from 'lucide-react';
 import { StockItem } from './types';
 
 interface StockManagerProps {
@@ -12,7 +12,7 @@ interface StockManagerProps {
 function isExpired(validity?: string): boolean {
   if (!validity) return false;
   const today = new Date();
-  const validDate = new Date(validity);
+  const validDate = new Date(validity + 'T00:00:00');
   today.setHours(0, 0, 0, 0);
   validDate.setHours(0, 0, 0, 0);
   return validDate < today;
@@ -31,10 +31,13 @@ const StockManager: React.FC<StockManagerProps> = ({
 }) => {
   const [search, setSearch] = useState("");
 
-  const filteredItems = stockItems.filter(
-    item =>
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      (item.category ?? "").toLowerCase().includes(search.toLowerCase())
+  const filteredItems = useMemo(
+    () =>
+      stockItems.filter(item =>
+        item.name.toLowerCase().includes(search.toLowerCase()) ||
+        (item.category ?? "").toLowerCase().includes(search.toLowerCase())
+      ),
+    [stockItems, search]
   );
 
   return (
@@ -51,16 +54,13 @@ const StockManager: React.FC<StockManagerProps> = ({
           />
           <button
             onClick={() => {
-              if (typeof handleAddStock === 'function') {
-                try {
-                  handleAddStock();
-                } catch (error) {
-                  console.error("[StockManager] ERRO ao chamar handleAddStock:", error);
-                }
-              } else {
-                console.error("[StockManager] ERRO CRÍTICO: handleAddStock NÃO é uma função! Valor recebido:", handleAddStock);
+              try {
+                handleAddStock();
+              } catch (error) {
+                console.error("[StockManager] ERRO ao chamar handleAddStock:", error);
               }
             }}
+            aria-label="Adicionar item de estoque"
             className="bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-5 py-2 rounded text-sm font-semibold transition-colors whitespace-nowrap"
           >
             <Plus className="h-4 w-4 mr-2" /> Adicionar Item
@@ -86,54 +86,61 @@ const StockManager: React.FC<StockManagerProps> = ({
               const expired = isExpired(item.validity);
               const lowStock = isLowStock(item.quantity, item.minQuantity);
 
-              let rowClassName = '';
-              if (expired) {
-                rowClassName = 'bg-red-50 hover:bg-red-100/70';
-              } else if (lowStock) {
-                rowClassName = 'bg-yellow-50 hover:bg-yellow-100/70';
-              } else {
-                rowClassName = 'hover:bg-gray-50/70';
-              }
-              
+              const rowClassName =
+                expired
+                  ? 'bg-red-50 hover:bg-red-100/70'
+                  : lowStock
+                    ? 'bg-yellow-50 hover:bg-yellow-100/70'
+                    : 'hover:bg-gray-50/70';
+
               return (
                 <tr key={item.id} className={rowClassName}>
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 flex items-center gap-1 flex-wrap">
                       <span>{item.name}</span>
                       {expired && item.validity && (
-                        <span className="flex items-center text-xs text-red-600 font-semibold rounded-full px-2 py-0.5 bg-red-100" title="Produto Vencido">
+                        <span
+                          className="flex items-center text-xs text-red-600 font-semibold rounded-full px-2 py-0.5 bg-red-100"
+                          title="Produto Vencido"
+                        >
                           <AlertTriangle className="w-3 h-3 mr-1" /> Vencido
                         </span>
                       )}
-                      {lowStock && !expired && (
-                          <span 
-                              className="flex items-center text-xs text-yellow-700 font-semibold rounded-full px-2 py-0.5 bg-yellow-100" 
-                              title={`Estoque baixo (Mín: ${item.minQuantity || 0})`}
-                          >
-                            <ArchiveRestore className="w-3 h-3 mr-1" /> Baixo Estoque
-                          </span>
-                      )}
-                       {lowStock && expired && ( 
-                          <span 
-                              className="flex items-center text-xs text-yellow-700 font-semibold rounded-full px-2 py-0.5 bg-yellow-100 ml-1" 
-                              title={`Estoque baixo (Mín: ${item.minQuantity || 0})`}
-                          >
-                            <ArchiveRestore className="w-3 h-3 mr-1" /> Baixo Estoque
-                          </span>
+                      {lowStock && (
+                        <span
+                          className="flex items-center text-xs text-yellow-700 font-semibold rounded-full px-2 py-0.5 bg-yellow-100"
+                          title={`Estoque baixo (Mín: ${item.minQuantity || 0})`}
+                        >
+                          <ArchiveRestore className="w-3 h-3 mr-1" /> Baixo Estoque
+                        </span>
                       )}
                     </div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{item.category || <span className="text-gray-400">—</span>}</div>
+                    <div className="text-sm text-gray-900">
+                      {item.category || <span className="text-gray-400">—</span>}
+                    </div>
                   </td>
-                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${lowStock && !expired ? 'text-yellow-700 font-bold' : expired ? 'text-red-700 font-bold' : 'text-gray-900'}`}>
+                  <td
+                    className={`px-4 py-4 whitespace-nowrap text-sm ${
+                      expired
+                        ? 'text-red-700 font-bold'
+                        : lowStock
+                          ? 'text-yellow-700 font-bold'
+                          : 'text-gray-900'
+                    }`}
+                  >
                     {item.quantity}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{item.minQuantity ?? <span className="text-gray-400">—</span>}</div>
+                    <div className="text-sm text-gray-900">
+                      {item.minQuantity ?? <span className="text-gray-400">—</span>}
+                    </div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{item.unit || <span className="text-gray-400">—</span>}</div>
+                    <div className="text-sm text-gray-900">
+                      {item.unit || <span className="text-gray-400">—</span>}
+                    </div>
                   </td>
                   <td className={`px-4 py-4 whitespace-nowrap text-sm ${expired ? 'text-red-700 font-bold' : 'text-gray-900'}`}>
                     {item.validity
@@ -143,7 +150,7 @@ const StockManager: React.FC<StockManagerProps> = ({
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
                       {item.updatedAt
-                        ? new Date(item.updatedAt).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'})
+                        ? new Date(item.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
                         : <span className="text-gray-400">—</span>}
                     </div>
                   </td>
@@ -152,6 +159,7 @@ const StockManager: React.FC<StockManagerProps> = ({
                       onClick={() => handleEditStock(item)}
                       className="p-2 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-800 transition"
                       title="Editar Item"
+                      aria-label="Editar item de estoque"
                     >
                       <Edit className="h-4 w-4" />
                     </button>
@@ -159,6 +167,7 @@ const StockManager: React.FC<StockManagerProps> = ({
                       onClick={() => handleDeleteStock(item.id)}
                       className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
                       title="Excluir Item"
+                      aria-label="Excluir item de estoque"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

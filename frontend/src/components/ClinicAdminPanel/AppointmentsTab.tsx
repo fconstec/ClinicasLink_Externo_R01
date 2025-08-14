@@ -1,6 +1,6 @@
 import React from "react";
-import AppointmentsManager from '@/components/ClinicAdminPanel_Managers/AppointmentsManager';
-import type { Professional, Service } from '@/components/ClinicAdminPanel_Managers/types';
+import AppointmentsManager from "@/components/ClinicAdminPanel_Managers/AppointmentsManager";
+import type { Professional, Service } from "@/components/ClinicAdminPanel_Managers/types";
 
 interface AppointmentsTabProps {
   professionals: Professional[];
@@ -12,8 +12,11 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
   services,
 }) => {
   return (
-    <AppointmentsManager professionals={professionals} services={services} />
+    <AppointmentsManager
+      professionals={professionals || []}
+      services={services || []}
+    />
   );
 };
 
-export default AppointmentsTab;
+export default React.memo(AppointmentsTab);
