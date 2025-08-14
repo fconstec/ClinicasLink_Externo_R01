@@ -48,9 +48,7 @@ interface ScheduleModalEditData {
 }
 
 type ScheduleModalInfo =
-  | {
-      eventData: ScheduleModalEditData;
-    }
+  | { eventData: ScheduleModalEditData }
   | {
       eventData: null;
       date: string;
@@ -70,11 +68,14 @@ const CalendarPage: React.FC = () => {
     loading: loadingProfessionals,
     fetchProfessionals,
   } = useProfessionals();
+
+  // Hook de agendamentos – usamos fetchAppointments (alias de refresh)
   const {
     appointments,
     loading: loadingAppointments,
     fetchAppointments,
   } = useAppointments();
+
   const { services, fetchServices } = useServices();
 
   useEffect(() => {
@@ -97,13 +98,15 @@ const CalendarPage: React.FC = () => {
     return appointments
       .filter(
         (a: Appointment) =>
-          a.status !== "cancelled" && a.professionalId != null
+            a.status !== "cancelled" &&
+            a.professionalId != null
       )
       .map((appt) => mapAppointmentToCalendarEvent(appt, { services }))
       .filter((e): e is CalendarEvent => e !== null);
   }, [appointments, services]);
 
   useEffect(() => {
+    // Debug
     console.log("Appointments (CalendarPage):", appointments);
   }, [appointments]);
 
@@ -120,13 +123,14 @@ const CalendarPage: React.FC = () => {
       alert("Nome do paciente é obrigatório.");
       return;
     }
+
     const profNum = Number(data.professionalId);
     const servNum = Number(data.serviceId);
-    if (isNaN(profNum) || profNum <= 0) {
+    if (!profNum || profNum <= 0) {
       alert("Profissional inválido.");
       return;
     }
-    if (isNaN(servNum) || servNum <= 0) {
+    if (!servNum || servNum <= 0) {
       alert("Serviço inválido.");
       return;
     }
@@ -146,7 +150,7 @@ const CalendarPage: React.FC = () => {
       patientName: data.patientName,
       patientPhone: data.patientPhone,
       professionalId: profNum,
-      service: serviceName,
+      service: serviceName,       // backend ainda espera campo textual?
       serviceId: servNum,
       date: data.date,
       time: data.time,
@@ -161,6 +165,7 @@ const CalendarPage: React.FC = () => {
         alert("Clínica não identificada.");
         return;
       }
+
       const url = eventId
         ? `${API_BASE_URL}/appointments/${eventId}?clinicId=${clinicId}`
         : `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
@@ -180,9 +185,7 @@ const CalendarPage: React.FC = () => {
         throw new Error(errMsg);
       }
       await res.json();
-      alert(
-        `Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`
-      );
+      alert(`Agendamento ${eventId ? "atualizado" : "criado"} com sucesso!`);
       setShowScheduleModal(false);
       setScheduleModalInfo(null);
       fetchAppointments();
@@ -211,9 +214,12 @@ const CalendarPage: React.FC = () => {
           professionalId: Number(ext.professionalId ?? ev.resourceId),
           serviceId: Number(ext.serviceId),
           serviceName:
-            ext.serviceName || ext.service || ext.service_name || "",
+            ext.serviceName ||
+            (ext as any).service ||
+            (ext as any).service_name ||
+            "",
           date: ext.date,
-          time: ext.time,
+            time: ext.time,
           endTime: ext.endTime,
           status: ext.status,
           notes: ext.notes,
@@ -222,7 +228,7 @@ const CalendarPage: React.FC = () => {
     } else {
       setScheduleModalInfo({
         eventData: null,
-        date: info?.date || "",
+        date: info?.date || new Date().toISOString().slice(0, 10),
         professionalId: info?.professionalId,
         time: info?.time || "",
         endTime: info?.endTime || "",
@@ -247,9 +253,7 @@ const CalendarPage: React.FC = () => {
         professionals={calendarProfs}
         search={search}
         extraEvents={calendarEvents}
-        onEditEvent={(event) =>
-          handleNewOrEditCalendarEvent({ event })
-        }
+        onEditEvent={(event) => handleNewOrEditCalendarEvent({ event })}
         onNewEvent={(info) => handleNewOrEditCalendarEvent(info)}
         loading={loadingAppointments || loadingProfessionals}
         onRefresh={fetchAppointments}

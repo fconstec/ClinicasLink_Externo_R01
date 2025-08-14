@@ -12,22 +12,24 @@ function getClinicId(): string {
   return id;
 }
 
+/**
+ * Converte Appointment (camelCase) para SubmittedFormData.
+ * Removido campo 'service' (não existe em SubmittedFormData).
+ */
 function appointmentToFormData(a: Appointment): SubmittedFormData {
   return {
     id: a.id,
-    patientId:
-      a.patientId === null || a.patientId === undefined
-        ? undefined
-        : Number(a.patientId),
-    patientName: a.patientName || a.patient_name || "",
+    patientId: a.patientId == null ? undefined : Number(a.patientId),
+    patientName: a.patientName || "",
     patientPhone: a.patientPhone || "",
-    professionalId: Number(a.professionalId ?? a.professional_id),
-    serviceId: Number(a.serviceId ?? a.service_id),
-    service: a.service || a.service_name || "",
+    professionalId: Number(a.professionalId),
+    serviceId: a.serviceId != null ? Number(a.serviceId) : 0,
     date: a.date,
     time: a.time,
-    endTime: a.endTime, // <- ESSENCIAL!
+    endTime: a.endTime,
     status: a.status,
+    // Se SubmittedFormData tiver notes, inclua:
+    // notes: a.notes,
   };
 }
 
@@ -57,12 +59,10 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
     setError(null);
     try {
       const clinicId = getClinicId();
-      const res = await fetch(
-        `${API_BASE_URL}/api/appointments?clinicId=${clinicId}`
-      );
+      const res = await fetch(`${API_BASE_URL}/api/appointments?clinicId=${clinicId}`);
       if (!res.ok) throw new Error(res.statusText);
       const data: Appointment[] = await res.json();
-      setAppointments(data);
+      setAppointments(Array.isArray(data) ? data : []);
     } catch (err) {
       setError('Falha ao carregar agendamentos.');
       setAppointments([]);
@@ -74,9 +74,7 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
   const fetchPatients = useCallback(async () => {
     try {
       const clinicId = getClinicId();
-      const res = await fetch(
-        `${API_BASE_URL}/api/patients?clinicId=${clinicId}`
-      );
+      const res = await fetch(`${API_BASE_URL}/api/patients?clinicId=${clinicId}`);
       if (!res.ok) throw new Error(res.statusText);
       const data: Patient[] = await res.json();
       setPatients(Array.isArray(data) ? data : []);
@@ -89,27 +87,25 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
 
   const [displayedAppointments, setDisplayedAppointments] = useState<Appointment[]>([]);
+
   useEffect(() => {
     const term = searchTerm.toLowerCase();
     const filtered = appointments.filter(app => {
-      const nameMatch = (app.patientName || app.patient_name || '')
-        .toLowerCase()
-        .includes(term);
-      const serviceMatch = (app.service || app.service_name || '')
-        .toLowerCase()
-        .includes(term);
-      const profMatch = (
-        app.professional_name ||
-        professionals.find(p => p.id === (app.professionalId ?? app.professional_id))?.name ||
-        ''
-      )
-        .toLowerCase()
-        .includes(term);
+      const patientName = app.patientName || "";
+      const serviceName = app.serviceName || "";
+      const profName =
+        app.professionalName ||
+        professionals.find(p => p.id === app.professionalId)?.name ||
+        "";
+      const startUTC = (app as any).startUTC as string | undefined;
+
+      const nameMatch = patientName.toLowerCase().includes(term);
+      const serviceMatch = serviceName.toLowerCase().includes(term);
+      const profMatch = profName.toLowerCase().includes(term);
+
       let dateMatch = false;
-      if (app.startUTC) {
-        dateMatch = new Date(app.startUTC)
-          .toLocaleDateString('pt-BR')
-          .includes(term);
+      if (startUTC) {
+        dateMatch = new Date(startUTC).toLocaleDateString('pt-BR').includes(term);
       } else if (app.date) {
         dateMatch = app.date.includes(term);
       }
@@ -147,16 +143,11 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
     data: SubmittedFormData,
     id?: string | number
   ) => {
-    // Validar que endTime está presente e maior que time
     if (!data.endTime) {
       alert("Hora fim (endTime) é obrigatória.");
       throw new Error("Hora fim (endTime) é obrigatória.");
     }
-    if (
-      data.time &&
-      data.endTime &&
-      data.time === data.endTime
-    ) {
+    if (data.time && data.endTime && data.time === data.endTime) {
       alert("Hora fim deve ser maior que a hora de início.");
       throw new Error("Hora fim deve ser maior que a hora de início.");
     }
@@ -167,21 +158,21 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
     }
     const clinicId = getClinicId();
 
-    // Monta explicitamente o payload, incluindo endTime SEMPRE
     const payload = {
       patientId: data.patientId,
       patientName: data.patientName,
       patientPhone: data.patientPhone,
       professionalId: Number(data.professionalId),
       serviceId: Number(data.serviceId),
-      service: serviceObj.name,
+      service: serviceObj.name,        // se backend exige
+      serviceName: serviceObj.name,    // redundante
       date: data.date,
       time: data.time,
-      endTime: data.endTime, // <-- ESSENCIAL!
+      endTime: data.endTime,
       status: data.status,
+      // notes: data.notes,
     };
 
-    // Debug: veja no console o payload realmente enviado!
     console.log("Payload enviado:", payload);
 
     const method = id ? 'PUT' : 'POST';
@@ -189,7 +180,6 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
       ? `${API_BASE_URL}/api/appointments/${id}?clinicId=${clinicId}`
       : `${API_BASE_URL}/api/appointments?clinicId=${clinicId}`;
 
-    if (!id) delete (payload as any).id;
     try {
       const res = await fetch(url, {
         method,
@@ -199,29 +189,20 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
       if (!res.ok) {
         let errorMsg = res.statusText;
         try {
-          const data = await res.json();
-          if (data && data.message) errorMsg = data.message;
+          const dataErr = await res.json();
+          if (dataErr && dataErr.message) errorMsg = dataErr.message;
         } catch {}
         throw new Error(errorMsg || 'Erro desconhecido');
       }
       setShowAppointmentModal(false);
       setEditingAppointment(null);
       await fetchAppointmentsInternal();
-      // Pode adicionar um toast aqui se quiser
     } catch (err) {
       console.error("Manager: Erro ao salvar agendamento:", err);
-      throw new Error(
-        err instanceof Error
-          ? err.message
-          : 'Erro ao salvar agendamento.'
-      );
+      throw err instanceof Error
+        ? err
+        : new Error('Erro ao salvar agendamento.');
     }
-  };
-
-  const handlePatientCreated = (newPatient: Patient) => {
-    setPatients(prev => [...prev, newPatient]);
-    setPendingPatientSelect(newPatient);
-    setShowPatientModal(false);
   };
 
   const getProfessionalName = (pid?: number) => {
@@ -230,13 +211,15 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
   };
 
   const getServiceName = (app: Appointment) =>
-    app.service_name || app.service || 'N/A';
+    app.serviceName || 'N/A';
 
   const addBtnClasses =
     'bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-4 py-2 rounded text-sm font-medium transition-colors';
 
-  if (isLoading) return <div className="p-6 text-center text-gray-500">Carregando agendamentos...</div>;
-  if (error) return <div className="p-6 text-center text-red-600 bg-red-50 rounded-lg">{error}</div>;
+  if (isLoading)
+    return <div className="p-6 text-center text-gray-500">Carregando agendamentos...</div>;
+  if (error)
+    return <div className="p-6 text-center text-red-600 bg-red-50 rounded-lg">{error}</div>;
 
   return (
     <div className="space-y-6 p-4 sm:p-0">
@@ -286,65 +269,71 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
                 </td>
               </tr>
             ) : (
-              displayedAppointments.map(app => (
-                <tr key={app.id} className="hover:bg-gray-50/70 transition-colors">
-                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {app.patientName || app.patient_name || 'N/A'}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {getServiceName(app)}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {app.professional_name || getProfessionalName(app.professionalId ?? app.professional_id)}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {app.startUTC
-                      ? new Date(app.startUTC).toLocaleDateString('pt-BR')
-                      : app.date || 'N/A'}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {app.startUTC
-                      ? new Date(app.startUTC).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                      : app.time || 'N/A'}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      app.status === 'completed'
-                        ? 'bg-green-100 text-green-800'
-                        : app.status === 'confirmed'
-                        ? 'bg-blue-100 text-blue-800'
-                        : app.status === 'cancelled'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-yellow-100 text-yellow-800'}`}>
-                      {app.status === 'pending'
-                        ? 'Pendente'
-                        : app.status === 'confirmed'
-                        ? 'Confirmado'
-                        : app.status === 'completed'
-                        ? 'Concluído'
-                        : app.status === 'cancelled'
-                        ? 'Cancelado'
-                        : app.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-center text-sm font-medium">
-                    <button
-                      onClick={() => handleEditAppointmentClick(app)}
-                      className="p-2 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-800 transition mr-1"
-                      title="Editar Agendamento"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteAppointmentClick(app.id)}
-                      className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
-                      title="Excluir Agendamento"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))
+              displayedAppointments.map(app => {
+                const startUTC = (app as any).startUTC as string | undefined;
+                return (
+                  <tr key={app.id} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {app.patientName || 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {getServiceName(app)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {app.professionalName || getProfessionalName(app.professionalId)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {startUTC
+                        ? new Date(startUTC).toLocaleDateString('pt-BR')
+                        : app.date || 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {startUTC
+                        ? new Date(startUTC).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                        : app.time || 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          app.status === 'completed'
+                            ? 'bg-green-100 text-green-800'
+                            : app.status === 'confirmed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : app.status === 'cancelled'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
+                        {app.status === 'pending'
+                          ? 'Pendente'
+                          : app.status === 'confirmed'
+                          ? 'Confirmado'
+                          : app.status === 'completed'
+                          ? 'Concluído'
+                          : app.status === 'cancelled'
+                          ? 'Cancelado'
+                          : app.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center text-sm font-medium">
+                      <button
+                        onClick={() => handleEditAppointmentClick(app)}
+                        className="p-2 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-800 transition mr-1"
+                        title="Editar Agendamento"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAppointmentClick(app.id)}
+                        className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
+                        title="Excluir Agendamento"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -362,7 +351,9 @@ const AppointmentsManager: React.FC<AppointmentsManagerProps> = ({
           services={services}
           onSubmit={handleSaveAppointmentModal}
           onAddPatient={() => setShowPatientModal(true)}
-          initialData={editingAppointment ? appointmentToFormData(editingAppointment) : undefined}
+          initialData={
+            editingAppointment ? appointmentToFormData(editingAppointment) : undefined
+          }
         />
       )}
     </div>

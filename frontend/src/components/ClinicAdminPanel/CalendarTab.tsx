@@ -46,19 +46,20 @@ const EVENT_COLOR_PALETTE = [
   "#fdf2f8",
 ];
 
+// Tipagem das props do componente
 interface CalendarTabProps {
   professionals: Professional[];
   services: Service[];
 }
 
 /**
- * Representação bruta vinda do backend (campos em snake_case ou variações).
- * Coloque aqui tudo que possa aparecer para evitar uso de any fora da normalização.
+ * Tipo cru vindo do backend (snake_case ou variações).
  */
 interface RawAppointment {
   id: number | string;
   patientId?: number | string;
   patient_id?: number | string;
+  patientName?: string;
   patient_name?: string;
   patient_name_full?: string;
   patientPhone?: string;
@@ -78,21 +79,15 @@ interface RawAppointment {
   endTime?: string;
   status?: string;
   notes?: string;
-  // Campos extras que possam chegar
   [key: string]: any;
 }
 
 /**
- * Normaliza um RawAppointment em um Appointment (camelCase).
- * Ajuste se o tipo Appointment no seu projeto possuir campos diferentes.
+ * Normaliza um RawAppointment em Appointment (camelCase).
+ * Ajuste se seu Appointment tiver diferenças.
  */
 function normalizeRawAppointment(raw: RawAppointment): Appointment {
-  const safeSliceTime = (t?: string) =>
-    t ? String(t).slice(0, 5) : undefined;
-
-  const date = String(raw.date).slice(0, 10);
-  const time = safeSliceTime(raw.time);
-  const endTime = safeSliceTime(raw.endTime);
+  const sliceTime = (t?: string) => (t ? String(t).slice(0, 5) : undefined);
 
   return {
     id: Number(raw.id),
@@ -111,19 +106,17 @@ function normalizeRawAppointment(raw: RawAppointment): Appointment {
     professionalId: Number(
       raw.professionalId ?? raw.professional_id ?? raw.professional
     ),
-    professionalName:
-      raw.professionalName || raw.professional_name || "",
+    professionalName: raw.professionalName || raw.professional_name || "",
     serviceId:
       raw.serviceId != null
         ? Number(raw.serviceId)
         : raw.service_id != null
         ? Number(raw.service_id)
         : undefined,
-    serviceName:
-      raw.serviceName || raw.service || raw.service_name || "",
-    date,
-    time: time || "",
-    endTime,
+    serviceName: raw.serviceName || raw.service || raw.service_name || "",
+    date: String(raw.date).slice(0, 10),
+    time: sliceTime(raw.time) || "",
+    endTime: sliceTime(raw.endTime),
     status: (raw.status || "pending") as AppointmentStatus,
     notes: raw.notes,
   } as Appointment;
@@ -322,8 +315,8 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
       patientPhone: formData.patientPhone,
       professionalId: profNum,
       serviceId: servNum,
-      service: svc.name,       // se o backend ainda espera 'service'
-      serviceName: svc.name,   // se quiser manter ambos
+      service: svc.name,       // se o backend ainda espera este campo
+      serviceName: svc.name,   // redundante por compatibilidade
       date: formData.date,
       time: formData.time,
       endTime: formData.endTime,
@@ -398,7 +391,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ professionals, services }) =>
               ? scheduleModalInfo.professionalId
               : undefined
           }
-            initialTime={
+          initialTime={
             scheduleModalInfo.eventData === null
               ? scheduleModalInfo.time
               : undefined

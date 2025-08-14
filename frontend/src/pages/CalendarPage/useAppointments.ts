@@ -1,68 +1,115 @@
-//
-import { useState, useCallback } from "react";
-import type { Appointment } from "../../components/ClinicAdminPanel_Managers/types";
-import { getClinicId } from "./scheduleHelpers";
-import { API_BASE_URL } from "../../api/apiBase";
+// Este é o hook canônico de agendamentos. Não duplicar em outras pastas.
+import { useCallback, useEffect, useState } from "react";
+import type { Appointment } from "@/components/ClinicAdminPanel_Managers/types";
+import {
+  fetchAppointments as apiFetchAppointments,
+  createAppointment as apiCreateAppointment,
+  updateAppointment as apiUpdateAppointment,
+  deleteAppointment as apiDeleteAppointment,
+  CreateAppointmentPayload,
+  UpdateAppointmentPayload,
+} from "@/api/appointmentsApi";
 
-export function useAppointments() {
+interface UseAppointmentsOptions {
+  autoLoad?: boolean;
+  clinicId?: string;
+}
+
+export interface UseAppointmentsResult {
+  appointments: Appointment[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  /**
+   * Alias de refresh para manter compatibilidade com código legado que chama fetchAppointments()
+   */
+  fetchAppointments: () => Promise<void>;
+  create: (p: CreateAppointmentPayload) => Promise<Appointment>;
+  update: (id: number | string, p: UpdateAppointmentPayload) => Promise<Appointment>;
+  remove: (id: number | string) => Promise<void>;
+}
+
+/**
+ * Obtém clinicId explícito ou do localStorage; lança erro se não existir.
+ */
+function getClinicIdOrThrow(explicit?: string): string {
+  if (explicit && explicit.trim().length > 0) return explicit;
+  const fromStorage = localStorage.getItem("clinic_id");
+  if (!fromStorage) throw new Error("clinic_id não encontrado no localStorage.");
+  return fromStorage;
+}
+
+export function useAppointments(options: UseAppointmentsOptions = {}): UseAppointmentsResult {
+  const { autoLoad = true, clinicId } = options;
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(!!autoLoad);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchAppointments = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const clinicId = getClinicId();
-      const url = `${API_BASE_URL}/appointments?clinicId=${clinicId}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(res.statusText);
-      const raw = await res.json();
-      if (Array.isArray(raw)) {
-        const processed = raw
-          .map((ap: any): Appointment | null => {
-            const idNum = Number(ap.id);
-            const profNum = Number(ap.professionalId ?? ap.professional_id ?? ap.professional);
-            if (
-              isNaN(idNum) ||
-              !ap.date ||
-              !ap.time ||
-              isNaN(profNum)
-            ) {
-              return null;
-            }
-            return {
-              id: idNum,
-              patientId:
-                ap.patientId != null
-                  ? Number(ap.patientId)
-                  : ap.patient_id != null
-                  ? Number(ap.patient_id)
-                  : undefined,
-              patientName: String(ap.patientName || ap.patient_name || ""),
-              patientPhone: ap.patientPhone || "",
-              serviceId: Number(ap.serviceId ?? ap.service_id),
-              service: ap.service || ap.service_name || "",
-              service_name: ap.service_name || ap.service || "",
-              professionalId: profNum,
-              professional_name: ap.professional_name || "",
-              date: String(ap.date).slice(0, 10),
-              time: String(ap.time).slice(0, 5),
-              endTime: ap.endTime ? String(ap.endTime).slice(0, 5) : undefined,
-              status: ap.status || "pending",
-            };
-          })
-          .filter((x): x is Appointment => x !== null && typeof x.id === "number" && x.id > 0);
-        setAppointments(processed);
-        // <-- Console para debug
-        console.log("Appointments com endTime:", processed);
-      } else {
-        setAppointments([]);
-      }
-    } catch {
+      // apiFetchAppointments aceita clinicId opcional
+      const data = await apiFetchAppointments(clinicId);
+      setAppointments(data);
+    } catch (e: any) {
+      setError(e?.message || "Erro ao carregar agendamentos.");
       setAppointments([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clinicId]);
 
-  return { appointments, setAppointments, loading, fetchAppointments };
+  useEffect(() => {
+    if (autoLoad) {
+      void load();
+    }
+  }, [autoLoad, load]);
+
+  const create = useCallback(
+    async (p: CreateAppointmentPayload) => {
+      const cid = getClinicIdOrThrow(clinicId);
+      const created = await apiCreateAppointment(p, cid);
+      setAppointments(prev => [created, ...prev]);
+      return created;
+    },
+    [clinicId]
+  );
+
+  const update = useCallback(
+    async (id: number | string, p: UpdateAppointmentPayload) => {
+      const cid = getClinicIdOrThrow(clinicId);
+      const numericId = typeof id === "string" ? Number(id) : id;
+      if (Number.isNaN(numericId)) throw new Error("ID inválido para update.");
+      const updated = await apiUpdateAppointment(numericId, cid, p);
+      setAppointments(prev =>
+        prev.map(a => (a.id === numericId ? updated : a))
+      );
+      return updated;
+    },
+    [clinicId]
+  );
+
+  const remove = useCallback(
+    async (id: number | string) => {
+      const cid = getClinicIdOrThrow(clinicId);
+      const numericId = typeof id === "string" ? Number(id) : id;
+      if (Number.isNaN(numericId)) throw new Error("ID inválido para delete.");
+      await apiDeleteAppointment(numericId, cid);
+      setAppointments(prev => prev.filter(a => a.id !== numericId));
+    },
+    [clinicId]
+  );
+
+  return {
+    appointments,
+    loading,
+    error,
+    refresh: load,
+    fetchAppointments: load, // alias de compatibilidade
+    create,
+    update,
+    remove,
+  };
 }
