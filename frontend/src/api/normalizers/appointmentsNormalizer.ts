@@ -1,85 +1,113 @@
 import type { Appointment, AppointmentStatus } from "@/components/ClinicAdminPanel_Managers/types";
 
 /**
- * Representa o formato cru vindo do backend (snake_case / nomes mistos).
+ * Mapeamento explícito de snake_case -> camelCase para evitar ambiguidade.
+ * Adicione/remova conforme o backend.
  */
-export interface RawAppointment {
-  id: number | string;
-  patientId?: number | string;
-  patient_id?: number | string;
-  patientName?: string;
-  patient_name?: string;
-  patient_name_full?: string;
-  patientPhone?: string;
-  patient_phone?: string;
-  professionalId?: number | string;
-  professional_id?: number | string;
-  professional?: number | string;
-  professionalName?: string;
-  professional_name?: string;
-  serviceId?: number | string;
-  service_id?: number | string;
-  serviceName?: string;
-  service?: string;
-  service_name?: string;
-  date: string;
-  time?: string;
-  endTime?: string;
-  status?: string;
-  notes?: string;
-  startUTC?: string;
-  [key: string]: any;
+const FIELD_MAP: Record<string, string> = {
+  id: "id",
+  patient_id: "patientId",
+  patient_name: "patientName",
+  patient_phone: "patientPhone",
+  professional_id: "professionalId",
+  professional_name: "professionalName",
+  service_id: "serviceId",
+  service_name: "serviceName",
+  service: "service", // às vezes backend já manda service textual
+  date: "date",
+  time: "time",
+  end_time: "endTime",
+  endTime: "endTime",
+  status: "status",
+  notes: "notes",
+  created_at: "createdAt",
+  updated_at: "updatedAt",
+  start_utc: "startUTC",
+  startUtc: "startUTC",
+  utc_date_time: "utcDateTime",
+  utcDateTime: "utcDateTime",
+};
+
+export function isAppointmentNormalized(obj: any): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  // Heurística: se já tem patientName OU professionalId e não contém nenhuma snake conhecida
+  if ("patientName" in obj || "professionalId" in obj || "serviceId" in obj) {
+    for (const k of Object.keys(obj)) {
+      if (k.includes("_") && FIELD_MAP[k]) return false;
+    }
+    return true;
+  }
+  return false;
 }
 
-const sliceTime = (t?: string) => (t ? String(t).slice(0, 5) : undefined);
+function coerceStatus(value: any): AppointmentStatus {
+  const allowed: AppointmentStatus[] = ["pending", "confirmed", "completed", "cancelled"];
+  if (allowed.includes(value)) return value;
+  return "pending";
+}
 
-/**
- * Normaliza um RawAppointment em Appointment (camelCase).
- * Ajuste se o tipo Appointment mudar.
- */
-export function normalizeRawAppointment(raw: RawAppointment): Appointment {
-  return {
-    id: Number(raw.id),
-    patientId:
-      raw.patientId != null
-        ? Number(raw.patientId)
-        : raw.patient_id != null
-        ? Number(raw.patient_id)
-        : undefined,
-    patientName:
-      raw.patientName ||
+export function normalizeAppointment(raw: any): Appointment {
+  if (!raw || typeof raw !== "object") {
+    return {
+      id: 0,
+      patientName: "Paciente",
+      professionalId: 0,
+      serviceId: 0,
+      date: "",
+      time: "",
+      status: "pending",
+    } as Appointment;
+  }
+
+  if (isAppointmentNormalized(raw)) {
+    // Garantia mínima: normaliza status se estiver incorreto
+    if (raw.status && !["pending", "confirmed", "completed", "cancelled"].includes(raw.status)) {
+      raw.status = "pending";
+    }
+    return raw as Appointment;
+  }
+
+  const out: Record<string, any> = {};
+
+  // 1. Copia campos conhecidos
+  for (const [snake, camel] of Object.entries(FIELD_MAP)) {
+    if (raw[snake] !== undefined && out[camel] === undefined) {
+      out[camel] = raw[snake];
+    }
+  }
+
+  // 2. Copia campos adicionais não mapeados (não perde nada)
+  for (const key of Object.keys(raw)) {
+    if (!(key in FIELD_MAP) && out[key] === undefined) {
+      out[key] = raw[key];
+    }
+  }
+
+  // 3. Coerções / defaults
+  out.id = Number(out.id) || 0;
+  out.professionalId = out.professionalId != null ? Number(out.professionalId) : 0;
+  out.serviceId = out.serviceId != null ? Number(out.serviceId) : 0;
+  if (!out.patientName) {
+    out.patientName =
       raw.patient_name ||
-      raw.patient_name_full ||
-      "",
-    patientPhone: raw.patientPhone || raw.patient_phone || "",
-    professionalId: Number(
-      raw.professionalId ?? raw.professional_id ?? raw.professional
-    ),
-    professionalName: raw.professionalName || raw.professional_name || "",
-    serviceId:
-      raw.serviceId != null
-        ? Number(raw.serviceId)
-        : raw.service_id != null
-        ? Number(raw.service_id)
-        : undefined,
-    serviceName: raw.serviceName || raw.service || raw.service_name || "",
-    date: String(raw.date).slice(0, 10),
-    time: sliceTime(raw.time) || "",
-    endTime: sliceTime(raw.endTime),
-    status: (raw.status || "pending") as AppointmentStatus,
-    notes: raw.notes,
-    // Se Appointment NÃO declara startUTC / created_at / updated_at,
-    // remova estas linhas ou faça augmentation do tipo.
-    // created_at: raw.created_at,
-    // updated_at: raw.updated_at,
-    // startUTC: raw.startUTC,
-  } as Appointment;
+      raw.patientName ||
+      raw.patient ||
+      "Paciente";
+  }
+  out.status = coerceStatus(out.status);
+
+  // Garante strings básicas
+  out.date = out.date || "";
+  out.time = out.time || "";
+
+  return out as Appointment;
 }
 
-/**
- * Normaliza array de RawAppointments (fail-safe).
- */
-export function normalizeAppointments(data: unknown): Appointment[] {
-  if (!Array.isArray(data)) return [];
-  return data.map(d => normalizeRawAppointment(d as RawAppointment));
+export function normalizeAppointments(arr: any[]): Appointment[] {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(normalizeAppointment);
 }
+
+// Aliases semânticos (úteis se alguém procura "ensure*")
+export const ensureNormalizedAppointment = normalizeAppointment;
+export const ensureNormalizedAppointments = normalizeAppointments;
