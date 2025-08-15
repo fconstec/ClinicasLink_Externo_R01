@@ -1,11 +1,11 @@
 import React, { useRef } from "react";
 import { Trash2, Plus, ZoomIn } from "lucide-react";
-import { fileUrl } from "@/api/apiBase";
+import { fileUrl } from "../../../../api/apiBase";
 import {
   ProcedureDraft,
   ProcedureImage,
   StoredProcedureImage,
-} from "@/types/procedureDraft";
+} from "../../../../types/procedureDraft";
 
 interface ProcedureRowProps {
   procedure: ProcedureDraft;
@@ -18,7 +18,6 @@ interface ProcedureRowProps {
 
 function normalizeImageUrl(img: ProcedureImage): string {
   if (img instanceof File) return URL.createObjectURL(img);
-
   const raw = img.url?.trim() || "";
   if (!raw) return "";
   if (/^https?:/i.test(raw)) {
@@ -46,12 +45,12 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const normalizedDate =
+    !procedure.date || procedure.date === "null" ? "" : procedure.date;
+
   function handleFieldChange(field: keyof ProcedureDraft, value: string) {
     onChange({ [field]: value });
   }
-
-  const normalizedDate =
-    !procedure.date || procedure.date === "null" ? "" : procedure.date;
 
   function handleImageInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -108,7 +107,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
 
       <div>
         <textarea
-            value={procedure.description ?? ""}
+          value={procedure.description ?? ""}
           onChange={(e) => handleFieldChange("description", e.target.value)}
           className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs w-full resize-none focus:border-[#e11d48] bg-white"
           style={{ minHeight: 36, maxHeight: 120, overflowY: "auto" }}
@@ -158,7 +157,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
         <button
           type="button"
           className="flex items-center justify-center w-14 h-14 rounded-xl border-2 border-dashed border-[#c8d1e1] bg-[#f7f9fb] hover:bg-[#e5e8ee] text-[#e11d48] transition"
-          onClick={() => fileInputRef.current?.click()}
+            onClick={() => fileInputRef.current?.click()}
           title="Adicionar imagem"
           aria-label="Adicionar imagem"
         >

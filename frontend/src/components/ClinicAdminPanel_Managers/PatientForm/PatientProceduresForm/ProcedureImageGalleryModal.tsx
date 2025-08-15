@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
-import { fileUrl } from "@/api/apiBase";
-import { ProcedureImage } from "@/types/procedureDraft";
+import { fileUrl } from "../../../../api/apiBase";
+import { ProcedureImage } from "../../../../types/procedureDraft";
 
 function normalizeImageUrl(img: ProcedureImage): string {
   if (!img) return "";

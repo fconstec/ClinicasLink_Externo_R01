@@ -1,13 +1,15 @@
+// Tipos centrais unificados para procedimentos e imagens.
+
 export interface StoredProcedureImage {
-  id: number;               // id no backend
-  url: string;              // URL (relativa ou absoluta)
+  id: number;          // ID retornado pelo backend
+  url: string;         // Pode ser absoluta ou relativa (/uploads/...)
   fileName?: string;
 }
 
 export type ProcedureImage = File | StoredProcedureImage;
 
 export interface ProcedureDraft {
-  id: number;               // id persistido; negativo/zero se temporário
+  id: number;          // ID persistido; use valor negativo para drafts novos
   date: string;
   description: string;
   professional: string;
@@ -15,10 +17,8 @@ export interface ProcedureDraft {
   images: ProcedureImage[];
 }
 
-/**
- * Versão persistida mínima para conversão.
- * Se você já possui um tipo Procedure em outro lugar, alinhe / remova este.
- */
+// Caso precise converter de um tipo Procedure externo,
+// crie um adaptador mantendo a estrutura mínima abaixo:
 export interface PersistedProcedure {
   id: number;
   date: string;

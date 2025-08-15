@@ -1,24 +1,24 @@
 import React, { useState } from "react";
 import { useParams } from "react-router-dom";
-import type { Procedure } from "../../types"; // mantenha se já existe
 import ProcedureRow from "./ProcedureRow";
-import { useProcedureForm } from "./useProcedureForm";
 import ProcedureImageGalleryModal from "./ProcedureImageGalleryModal";
+import { useProcedureForm } from "./useProcedureForm";
 import {
   uploadProcedureImage,
   deleteProcedureImage,
-} from "@/api";
+} from "../../../../api";
 import {
   ProcedureDraft,
   StoredProcedureImage,
   ProcedureImage,
   PersistedProcedure,
-} from "@/types/procedureDraft";
+} from "../../../../types/procedureDraft";
 
+// Se você já tiver um tipo Procedure global diferente, adapte a conversão inicial abaixo.
 interface PatientProceduresFormProps {
   patientId: number;
-  procedures?: Procedure[];
-  onSave?: (newProcedures: Procedure[]) => void;
+  procedures?: any[]; // usar tipo externo se existir
+  onSave?: (newProcedures: any[]) => void;
   onCancel?: () => void;
 }
 
@@ -30,6 +30,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 }) => {
   const { id: clinicId } = useParams<{ id: string }>();
 
+  // Converte lista externa para formato interno PersistedProcedure
   const initialPersisted: PersistedProcedure[] = (procedures || []).map(
     (p: any) => ({
       id: p.id,

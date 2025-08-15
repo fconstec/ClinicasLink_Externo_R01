@@ -4,12 +4,15 @@ import {
   ProcedureImage,
   PersistedProcedure,
   StoredProcedureImage,
-} from "@/types/procedureDraft";
+} from "../../../../types/procedureDraft";
 import {
   addPatientProcedure,
-  // Se existir updatePatientProcedure / patchProcedure importe aqui
-} from "@/api";
+  // Se existir updatePatientProcedure importe aqui
+} from "../../../../api";
 
+/**
+ * Converte um procedimento persistido para draft interno.
+ */
 export function toDraft(p: PersistedProcedure): ProcedureDraft {
   return {
     id: p.id,
@@ -27,7 +30,7 @@ interface SubmitAllOptions {
 }
 
 /**
- * Hook para gerir a lista de procedimentos antes de persistir.
+ * Hook para gerenciar procedimentos em formulário modal.
  */
 export function useProcedureForm(
   patientId: number,
@@ -40,6 +43,9 @@ export function useProcedureForm(
   const [submitting, setSubmitting] = useState(false);
   const [tempIdCounter, setTempIdCounter] = useState(-1);
 
+  /**
+   * Adiciona novo draft (ID temporário negativo).
+   */
   const addProcedureRow = useCallback(() => {
     setRowData((prev) => [
       ...prev,
@@ -55,10 +61,16 @@ export function useProcedureForm(
     setTempIdCounter((c) => c - 1);
   }, [tempIdCounter]);
 
+  /**
+   * Remove procedimento pelo índice.
+   */
   const removeProcedure = useCallback((index: number) => {
     setRowData((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  /**
+   * Atualiza campos de um procedimento.
+   */
   const handleRowChange = useCallback(
     (index: number, update: Partial<ProcedureDraft>) => {
       setRowData((prev) =>
@@ -69,61 +81,42 @@ export function useProcedureForm(
   );
 
   /**
-   * Submete todos os procedimentos.
-   * Para novos (id <= 0) chama addPatientProcedure.
-   * Para existentes, por enquanto só reusa os dados locais (adapte se tiver endpoint de update).
+   * Envia todos os procedimentos (cria novos; placeholder para update).
    */
   const submitAll = useCallback(
     async ({ onSave, onCancel }: SubmitAllOptions = {}) => {
-      if (!clinicId) {
-        // Caso o backend não precise de clinicId, pode remover esta verificação
-        console.warn("[Procedures][submitAll] clinicId ausente (ignorado).");
-      }
       setSubmitting(true);
       try {
         const persisted: PersistedProcedure[] = [];
 
         for (const draft of rowData) {
-          const payload = {
+          const payload: any = {
             date: draft.date || null,
             description: draft.description || "",
             professional: draft.professional || "",
             value: draft.value || "",
-            // Se o backend precisa de clinicId no corpo:
+            // Se sua API precisar explicitamente de clinicId no body:
             // clinicId,
           };
 
           if (draft.id <= 0) {
-            // Novo
+            // Draft novo
             let created: PersistedProcedure;
 
-            // Se sua addPatientProcedure suportar clinicId como 3º argumento em outro branch/versão,
-            // você pode detectar dinamicamente:
-            try {
-              if ((addPatientProcedure as any).length >= 3) {
-                // @ts-ignore - chamada opcional com clinicId
-                created = await (addPatientProcedure as any)(
-                  patientId,
-                  payload,
-                  clinicId
-                );
-              } else {
-                created = await (addPatientProcedure as any)(
-                  patientId,
-                  payload
-                );
-              }
-            } catch (e) {
-              console.error(
-                "[Procedures][submitAll] erro ao criar procedimento:",
-                e
+            // Detecta se sua função addPatientProcedure aceita 3 argumentos (patientId, payload, clinicId)
+            const fnLen = (addPatientProcedure as any).length;
+            if (fnLen >= 3 && clinicId) {
+              created = await (addPatientProcedure as any)(
+                patientId,
+                payload,
+                clinicId
               );
-              throw e;
+            } else {
+              created = await (addPatientProcedure as any)(patientId, payload);
             }
-
             persisted.push(created);
           } else {
-            // Existente - TODO: trocar por chamada de update se tiver endpoint
+            // Procedimento existente - TODO: substituir por update se houver endpoint
             persisted.push({
               id: draft.id,
               date: draft.date,
@@ -137,9 +130,7 @@ export function useProcedureForm(
           }
         }
 
-        // Atualiza estado local com versões normalizadas
         setRowData(persisted.map(toDraft));
-
         onSave && onSave(persisted);
         onCancel && onCancel();
       } catch (err) {
@@ -149,7 +140,7 @@ export function useProcedureForm(
         setSubmitting(false);
       }
     },
-    [clinicId, patientId, rowData]
+    [patientId, clinicId, rowData]
   );
 
   return {
