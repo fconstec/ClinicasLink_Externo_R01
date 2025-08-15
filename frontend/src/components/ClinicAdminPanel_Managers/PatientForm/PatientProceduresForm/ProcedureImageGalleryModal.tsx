@@ -1,4 +1,3 @@
-// (Sem mudanças substantivas – incluído para completude)
 import React, { useState, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { fileUrl } from "../../../../api/apiBase";
@@ -10,11 +9,21 @@ function normalizeImageUrl(img: ProcedureImage): string {
   const raw = img.url.trim();
   if (!raw) return "";
   if (/^(blob:|data:)/i.test(raw)) return raw;
-  if (/^https?:/i.test(raw)) return raw;
-  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/"))
+  if (/^https?:/i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      if (u.host.includes("localhost")) return fileUrl(u.pathname + u.search);
+      return raw;
+    } catch {
+      return raw;
+    }
+  }
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
     return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
+  }
   return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
+
 function getDisplayName(img: ProcedureImage): string {
   if (img instanceof File) return img.name;
   return img.fileName || `Imagem #${img.id}`;
@@ -35,9 +44,19 @@ const ProcedureImageGalleryModal: React.FC<ProcedureImageGalleryModalProps> = ({
   const [idx, setIdx] = useState(
     startIdx >= 0 && startIdx < safe.length ? startIdx : 0
   );
+
   useEffect(() => {
-    if (idx >= safe.length) setIdx(safe.length ? safe.length - 1 : 0);
+    if (idx >= safe.length) {
+      setIdx(safe.length > 0 ? safe.length - 1 : 0);
+    }
   }, [idx, safe]);
+
+  function goPrev() {
+    setIdx((prev) => (prev === 0 ? safe.length - 1 : prev - 1));
+  }
+  function goNext() {
+    setIdx((prev) => (prev === safe.length - 1 ? 0 : prev + 1));
+  }
 
   if (!safe.length) {
     return (
@@ -60,13 +79,6 @@ const ProcedureImageGalleryModal: React.FC<ProcedureImageGalleryModalProps> = ({
   const url = normalizeImageUrl(current);
   const name = getDisplayName(current);
 
-  function prev() {
-    setIdx(p => (p === 0 ? safe.length - 1 : p - 1));
-  }
-  function next() {
-    setIdx(p => (p === safe.length - 1 ? 0 : p + 1));
-  }
-
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
       <div className="relative bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center max-w-[90vw] max-h-[90vh]">
@@ -82,7 +94,7 @@ const ProcedureImageGalleryModal: React.FC<ProcedureImageGalleryModalProps> = ({
             type="button"
             aria-label="Imagem anterior"
             className="p-2 text-[#e11d48] hover:text-[#f43f5e] transition disabled:opacity-30"
-            onClick={prev}
+            onClick={goPrev}
             disabled={safe.length < 2}
             style={{ visibility: safe.length > 1 ? "visible" : "hidden" }}
           >
@@ -100,7 +112,7 @@ const ProcedureImageGalleryModal: React.FC<ProcedureImageGalleryModalProps> = ({
             type="button"
             aria-label="Próxima imagem"
             className="p-2 text-[#e11d48] hover:text-[#f43f5e] transition disabled:opacity-30"
-            onClick={next}
+            onClick={goNext}
             disabled={safe.length < 2}
             style={{ visibility: safe.length > 1 ? "visible" : "hidden" }}
           >

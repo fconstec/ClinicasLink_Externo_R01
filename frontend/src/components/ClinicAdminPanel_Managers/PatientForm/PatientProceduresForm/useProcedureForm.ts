@@ -7,9 +7,12 @@ import {
 } from "../../../../types/procedureDraft";
 import {
   addPatientProcedure,
-  // updatePatientProcedure, // Descomente se quiser update real
-} from "../../../../api/proceduresApi";
+  // updatePatientProcedure, // Descomente se quiser realmente atualizar procedimentos existentes
+} from "../../../../api";
 
+/**
+ * Converte um procedimento persistido para draft interno.
+ */
 export function toDraft(p: PersistedProcedure): ProcedureDraft {
   return {
     id: p.id,
@@ -41,7 +44,7 @@ export function useProcedureForm(
     setRowData(prev => [
       ...prev,
       {
-        id: tempIdCounter,
+        id: tempIdCounter, // ID temporário negativo
         date: "",
         description: "",
         professional: "",
@@ -65,20 +68,24 @@ export function useProcedureForm(
     []
   );
 
+  /**
+   * Monta payload para criação/atualização conforme API.
+   * Ajuste aqui se o backend exigir outros campos (ex.: status, tipo, etc).
+   */
   function buildPayload(draft: ProcedureDraft) {
     return {
       date: draft.date || null,
       description: draft.description || "",
       professional: draft.professional || "",
       value: draft.value || "",
-      clinicId: clinicId || "", // requerido pela função addPatientProcedure
+      clinicId: clinicId || "", // obrigatório na sua assinatura (Omit<Procedure,"id"> & { clinicId: string })
     };
   }
 
   const submitAll = useCallback(
     async ({ onSave, onCancel }: SubmitAllOptions = {}) => {
       if (!clinicId) {
-        alert("clinicId não encontrado.");
+        alert("ClinicId não encontrado.");
         return;
       }
       setSubmitting(true);
@@ -87,17 +94,36 @@ export function useProcedureForm(
 
         for (const draft of rowData) {
           const payload = buildPayload(draft);
+
           if (draft.id <= 0) {
-            // Criar
-            const created = await addPatientProcedure(patientId, payload);
-            persisted.push(created as any);
+            // Criar novo
+            try {
+              const created = await addPatientProcedure(patientId, payload);
+              persisted.push(created as any);
+            } catch (e: any) {
+              console.error(
+                "[Procedures][submitAll] erro ao criar procedimento:",
+                e
+              );
+              throw e;
+            }
           } else {
-            // Atualizar (opcional)
+            // Atualizar existente (OPCIONAL)
+            // Se você quiser realmente persistir alterações de procedimentos existentes,
+            // descomente o import de updatePatientProcedure e o bloco abaixo.
             /*
-            const updated = await updatePatientProcedure(draft.id, payload);
-            persisted.push(updated as any);
+            try {
+              const updated = await updatePatientProcedure(draft.id, payload);
+              persisted.push(updated as any);
+            } catch (e: any) {
+              console.error(
+                "[Procedures][submitAll] erro ao atualizar procedimento:",
+                e
+              );
+              throw e;
+            }
             */
-            // Mantém local se update não estiver ativo
+            // Por enquanto, se não atualizar no backend, apenas mantém os dados locais:
             persisted.push({
               id: draft.id,
               date: draft.date,
@@ -111,7 +137,9 @@ export function useProcedureForm(
           }
         }
 
+        // Atualiza estado com a versão normalizada vinda do backend
         setRowData(persisted.map(toDraft));
+
         onSave && onSave(persisted);
         onCancel && onCancel();
       } catch (err) {
