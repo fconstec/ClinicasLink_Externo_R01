@@ -6,7 +6,7 @@ import { useProcedureForm } from "./useProcedureForm";
 import {
   uploadProcedureImage,
   deleteProcedureImage,
-} from "../../../../api";
+} from "../../../../api/proceduresApi";
 import {
   ProcedureDraft,
   StoredProcedureImage,
@@ -14,10 +14,9 @@ import {
   PersistedProcedure,
 } from "../../../../types/procedureDraft";
 
-// Se você já tiver um tipo Procedure global diferente, adapte a conversão inicial abaixo.
 interface PatientProceduresFormProps {
   patientId: number;
-  procedures?: any[]; // usar tipo externo se existir
+  procedures?: any[]; // Substitua por seu tipo Procedure externo se houver
   onSave?: (newProcedures: any[]) => void;
   onCancel?: () => void;
 }
@@ -30,7 +29,6 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 }) => {
   const { id: clinicId } = useParams<{ id: string }>();
 
-  // Converte lista externa para formato interno PersistedProcedure
   const initialPersisted: PersistedProcedure[] = (procedures || []).map(
     (p: any) => ({
       id: p.id,
@@ -60,19 +58,20 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   async function handleUploadImage(procedureId: number, file: File) {
     if (!clinicId) return;
     try {
-      const updatedProc = await uploadProcedureImage(
+      const updated = await uploadProcedureImage(
         patientId,
         procedureId,
         file,
         clinicId
       );
+
       setRowData((prev: ProcedureDraft[]) =>
         prev.map((p: ProcedureDraft) =>
           p.id === procedureId
             ? {
                 ...p,
-                images: (updatedProc.images ||
-                  p.images.filter((i) => !(i instanceof File))) as StoredProcedureImage[],
+                images: (updated.images ||
+                  p.images.filter(i => !(i instanceof File))) as StoredProcedureImage[],
               }
             : p
         )
@@ -100,7 +99,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     setRowData((prev: ProcedureDraft[]) =>
       prev.map((p: ProcedureDraft) =>
         p.id === procedureId
-          ? { ...p, images: p.images.filter((img) => img !== image) }
+          ? { ...p, images: p.images.filter(img => img !== image) }
           : p
       )
     );
@@ -109,10 +108,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
       <form
-        onSubmit={(e) => {
+        onSubmit={e => {
           e.preventDefault();
           submitAll({
-            onSave: (persisted) => {
+            onSave: persisted => {
               onSave && onSave(persisted as any);
             },
             onCancel,
@@ -153,11 +152,11 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
                   <ProcedureRow
                     key={proc.id}
                     procedure={proc}
-                    onChange={(update) => handleRowChange(idx, update)}
+                    onChange={update => handleRowChange(idx, update)}
                     onRemove={() => removeProcedure(idx)}
-                    onAddImage={(file) => handleUploadImage(proc.id, file)}
-                    onRemoveImage={(img) => handleDeleteImage(proc.id, img)}
-                    onViewImage={(imgIdx) =>
+                    onAddImage={file => handleUploadImage(proc.id, file)}
+                    onRemoveImage={img => handleDeleteImage(proc.id, img)}
+                    onViewImage={imgIdx =>
                       setModalImage({ images: proc.images, idx: imgIdx })
                     }
                   />
