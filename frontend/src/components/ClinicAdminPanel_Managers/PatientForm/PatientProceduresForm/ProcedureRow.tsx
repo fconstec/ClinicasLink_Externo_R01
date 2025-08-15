@@ -1,37 +1,39 @@
 import React, { useRef } from "react";
 import { Trash2, Plus, ZoomIn } from "lucide-react";
-
-export interface ProcedureDraft {
-  id: number;
-  date: string;
-  description: string;
-  professional: string;
-  value: string;
-  images: (File | { id: number; url: string; fileName?: string })[];
-}
+import { fileUrl } from "@/api/apiBase";
+import {
+  ProcedureDraft,
+  ProcedureImage,
+  StoredProcedureImage,
+} from "@/types/procedureDraft";
 
 interface ProcedureRowProps {
   procedure: ProcedureDraft;
   onChange: (update: Partial<ProcedureDraft>) => void;
   onRemove: () => void;
   onAddImage: (file: File) => void;
-  onRemoveImage: (img: any) => void;
+  onRemoveImage: (img: ProcedureImage | StoredProcedureImage) => void;
   onViewImage: (imgIdx: number) => void;
 }
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
+function normalizeImageUrl(img: ProcedureImage): string {
+  if (img instanceof File) return URL.createObjectURL(img);
 
-function getImageUrl(img: any) {
-  if (typeof img === "string") {
-    return img.startsWith("http") ? img : `${API_URL}${img}`;
+  const raw = img.url?.trim() || "";
+  if (!raw) return "";
+  if (/^https?:/i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      if (u.host.includes("localhost")) return fileUrl(u.pathname + u.search);
+      return raw;
+    } catch {
+      return raw;
+    }
   }
-  if (img instanceof File) {
-    return URL.createObjectURL(img);
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
+    return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
   }
-  if (img.url) {
-    return img.url.startsWith("http") ? img.url : `${API_URL}${img.url}`;
-  }
-  return "";
+  return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
 const ProcedureRow: React.FC<ProcedureRowProps> = ({
@@ -53,9 +55,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
 
   function handleImageInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      onAddImage(file);
-    }
+    if (file) onAddImage(file);
     e.target.value = "";
   }
 
@@ -66,7 +66,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="date"
             value={normalizedDate}
-            onChange={e => handleFieldChange("date", e.target.value)}
+            onChange={(e) => handleFieldChange("date", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             max={new Date().toISOString().slice(0, 10)}
             placeholder="Data"
@@ -77,7 +77,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="text"
             value={procedure.professional ?? ""}
-            onChange={e => handleFieldChange("professional", e.target.value)}
+            onChange={(e) => handleFieldChange("professional", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             placeholder="Profissional"
             aria-label="Profissional"
@@ -87,7 +87,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="text"
             value={procedure.value ?? ""}
-            onChange={e => handleFieldChange("value", e.target.value)}
+            onChange={(e) => handleFieldChange("value", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             placeholder="R$"
             aria-label="Valor"
@@ -105,10 +105,11 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           </button>
         </div>
       </div>
+
       <div>
         <textarea
-          value={procedure.description ?? ""}
-          onChange={e => handleFieldChange("description", e.target.value)}
+            value={procedure.description ?? ""}
+          onChange={(e) => handleFieldChange("description", e.target.value)}
           className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs w-full resize-none focus:border-[#e11d48] bg-white"
           style={{ minHeight: 36, maxHeight: 120, overflowY: "auto" }}
           placeholder="Descreva o procedimento realizado"
@@ -116,39 +117,50 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           aria-label="Procedimento realizado"
         />
       </div>
-      {/* Galeria embutida */}
+
       <div className="flex gap-1 mt-2 flex-wrap">
-        {(procedure.images || []).map((img: any, i: number) => (
-          <div key={img.id || img.name || i} className="relative flex flex-col items-center group cursor-pointer">
-            <img
-              src={getImageUrl(img)}
-              alt={img.fileName || img.name || ""}
-              className="w-14 h-14 object-cover rounded-xl border border-[#e5e8ee] mb-1 shadow transition hover:scale-105"
-              onClick={() => onViewImage(i)}
-            />
-            <button
-              type="button"
-              className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-gray-400 opacity-0 group-hover:opacity-100 hover:text-[#e11d48] shadow p-0.5 transition"
-              onClick={() => onRemoveImage(img)}
-              aria-label="Remover"
+        {procedure.images.map((img, i) => {
+          const url = normalizeImageUrl(img);
+          const name =
+            img instanceof File
+              ? img.name
+              : img.fileName || `Imagem #${img.id}`;
+          return (
+            <div
+              key={img instanceof File ? name + i : img.id}
+              className="relative flex flex-col items-center group cursor-pointer"
             >
-              <Trash2 className="h-3 w-3" />
-            </button>
-            <button
-              type="button"
-              className="absolute bottom-1 right-1 bg-white rounded-full opacity-80 group-hover:opacity-100 p-0.5 shadow"
-              title="Ampliar"
-              onClick={() => onViewImage(i)}
-            >
-              <ZoomIn className="w-3 h-3 text-[#e11d48]" />
-            </button>
-          </div>
-        ))}
+              <img
+                src={url}
+                alt={name}
+                className="w-14 h-14 object-cover rounded-xl border border-[#e5e8ee] mb-1 shadow transition hover:scale-105"
+                onClick={() => onViewImage(i)}
+              />
+              <button
+                type="button"
+                className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-gray-400 opacity-0 group-hover:opacity-100 hover:text-[#e11d48] shadow p-0.5 transition"
+                onClick={() => onRemoveImage(img)}
+                aria-label="Remover"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                className="absolute bottom-1 right-1 bg-white rounded-full opacity-80 group-hover:opacity-100 p-0.5 shadow"
+                title="Ampliar"
+                onClick={() => onViewImage(i)}
+              >
+                <ZoomIn className="w-3 h-3 text-[#e11d48]" />
+              </button>
+            </div>
+          );
+        })}
         <button
           type="button"
           className="flex items-center justify-center w-14 h-14 rounded-xl border-2 border-dashed border-[#c8d1e1] bg-[#f7f9fb] hover:bg-[#e5e8ee] text-[#e11d48] transition"
           onClick={() => fileInputRef.current?.click()}
           title="Adicionar imagem"
+          aria-label="Adicionar imagem"
         >
           <Plus className="w-5 h-5" />
         </button>

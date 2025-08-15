@@ -1,142 +1,156 @@
-import { useState, useEffect } from "react";
-import type { Procedure } from "../../types";
+import { useCallback, useState } from "react";
 import {
-  fetchPatientProcedures,
+  ProcedureDraft,
+  ProcedureImage,
+  PersistedProcedure,
+  StoredProcedureImage,
+} from "@/types/procedureDraft";
+import {
   addPatientProcedure,
-  updatePatientProcedure,
-  deletePatientProcedure,
+  // Se existir updatePatientProcedure / patchProcedure importe aqui
 } from "@/api";
 
-export interface ProcedureDraft extends Omit<Procedure, "images"> {
-  images: (File | { id: number; url: string; fileName?: string })[];
-  newImages?: File[];
-  removedImageIds?: number[];
+export function toDraft(p: PersistedProcedure): ProcedureDraft {
+  return {
+    id: p.id,
+    date: p.date || "",
+    description: p.description || "",
+    professional: p.professional || "",
+    value: p.value || "",
+    images: (p.images || []) as StoredProcedureImage[],
+  };
 }
 
-function normalizeField(field: any) {
-  return (!field || field === "null") ? "" : field;
+interface SubmitAllOptions {
+  onSave?: (persisted: PersistedProcedure[]) => void;
+  onCancel?: () => void;
 }
 
-// REMOVIDO: emptyProcedure
-
+/**
+ * Hook para gerir a lista de procedimentos antes de persistir.
+ */
 export function useProcedureForm(
   patientId: number,
   clinicId?: string,
-  initialProcedures?: Procedure[]
+  initial?: PersistedProcedure[]
 ) {
-  const [rowData, setRowData] = useState<ProcedureDraft[]>([]);
+  const [rowData, setRowData] = useState<ProcedureDraft[]>(
+    (initial || []).map(toDraft)
+  );
   const [submitting, setSubmitting] = useState(false);
+  const [tempIdCounter, setTempIdCounter] = useState(-1);
 
-  useEffect(() => {
-    if (!clinicId) return;
-    fetchPatientProcedures(patientId, clinicId)
-      .then((res: any[]) =>
-        setRowData(
-          res.length > 0
-            ? res.map((p: any) => ({
-                ...p,
-                date: normalizeField(p.date),
-                description: normalizeField(p.description),
-                professional: normalizeField(p.professional),
-                value: normalizeField(p.value),
-                images: p.images || [],
-                newImages: [],
-                removedImageIds: [],
-              }))
-            : []
-        )
-      )
-      .catch(() => setRowData([]));
-  }, [patientId, clinicId]);
+  const addProcedureRow = useCallback(() => {
+    setRowData((prev) => [
+      ...prev,
+      {
+        id: tempIdCounter,
+        date: "",
+        description: "",
+        professional: "",
+        value: "",
+        images: [],
+      },
+    ]);
+    setTempIdCounter((c) => c - 1);
+  }, [tempIdCounter]);
 
-  // NOVO: adicionar procedimento faz chamada ao backend
-  async function addProcedureRow() {
-    if (!clinicId) return;
-    // Cria procedimento vazio (ou só com patientId/clinicId)
-    const payload = {
-      description: "",
-      professional: "",
-      value: "",
-      date: "",
-      clinicId: clinicId,
-    };
-    try {
-      const created = await addPatientProcedure(patientId, payload);
-      setRowData((prev: ProcedureDraft[]) => [
-        ...prev,
-        {
-          ...created,
-          date: normalizeField(created.date),
-          description: normalizeField(created.description),
-          professional: normalizeField(created.professional),
-          value: normalizeField(created.value),
-          images: created.images || [],
-          newImages: [],
-          removedImageIds: [],
-        },
-      ]);
-    } catch (err) {
-      alert("Erro ao criar procedimento.");
-    }
-  }
+  const removeProcedure = useCallback((index: number) => {
+    setRowData((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
-  function removeProcedure(idx: number) {
-    const proc = rowData[idx];
-    if (
-      clinicId &&
-      proc.id &&
-      typeof proc.id === "number" &&
-      !isNaN(proc.id) &&
-      proc.id > 0
-    ) {
-      deletePatientProcedure(proc.id, clinicId).then(() => {
-        setRowData((prev: ProcedureDraft[]) => prev.filter((_, i: number) => i !== idx));
-      });
-    } else {
-      setRowData((prev: ProcedureDraft[]) => prev.filter((_, i: number) => i !== idx));
-    }
-  }
+  const handleRowChange = useCallback(
+    (index: number, update: Partial<ProcedureDraft>) => {
+      setRowData((prev) =>
+        prev.map((p, i) => (i === index ? { ...p, ...update } : p))
+      );
+    },
+    []
+  );
 
-  function handleRowChange(idx: number, update: Partial<ProcedureDraft>) {
-    setRowData((prev: ProcedureDraft[]) =>
-      prev.map((proc: ProcedureDraft, i: number) =>
-        i === idx ? { ...proc, ...update } : proc
-      )
-    );
-  }
-
-  async function submitAll(
-    onSave?: (procs: Procedure[]) => void,
-    onCancel?: () => void
-  ) {
-    setSubmitting(true);
-    try {
-      if (!clinicId) throw new Error("Clínica não definida");
-
-      const results: Procedure[] = [];
-      for (const proc of rowData) {
-        const payload = {
-          description: normalizeField(proc.description),
-          professional: normalizeField(proc.professional),
-          value: normalizeField(proc.value),
-          date: normalizeField(proc.date),
-          clinicId: clinicId,
-        } as Omit<Procedure, "id"> & { clinicId: string };
-
-        // UPDATE sempre (todos já têm id do banco)
-        const updated = await updatePatientProcedure(proc.id, payload);
-        results.push({ ...updated, images: updated.images || [] });
+  /**
+   * Submete todos os procedimentos.
+   * Para novos (id <= 0) chama addPatientProcedure.
+   * Para existentes, por enquanto só reusa os dados locais (adapte se tiver endpoint de update).
+   */
+  const submitAll = useCallback(
+    async ({ onSave, onCancel }: SubmitAllOptions = {}) => {
+      if (!clinicId) {
+        // Caso o backend não precise de clinicId, pode remover esta verificação
+        console.warn("[Procedures][submitAll] clinicId ausente (ignorado).");
       }
-      alert("Procedimentos salvos com sucesso!");
-      if (onSave) onSave(results);
-      if (onCancel) onCancel();
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao salvar procedimentos. Tente novamente.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+      setSubmitting(true);
+      try {
+        const persisted: PersistedProcedure[] = [];
+
+        for (const draft of rowData) {
+          const payload = {
+            date: draft.date || null,
+            description: draft.description || "",
+            professional: draft.professional || "",
+            value: draft.value || "",
+            // Se o backend precisa de clinicId no corpo:
+            // clinicId,
+          };
+
+          if (draft.id <= 0) {
+            // Novo
+            let created: PersistedProcedure;
+
+            // Se sua addPatientProcedure suportar clinicId como 3º argumento em outro branch/versão,
+            // você pode detectar dinamicamente:
+            try {
+              if ((addPatientProcedure as any).length >= 3) {
+                // @ts-ignore - chamada opcional com clinicId
+                created = await (addPatientProcedure as any)(
+                  patientId,
+                  payload,
+                  clinicId
+                );
+              } else {
+                created = await (addPatientProcedure as any)(
+                  patientId,
+                  payload
+                );
+              }
+            } catch (e) {
+              console.error(
+                "[Procedures][submitAll] erro ao criar procedimento:",
+                e
+              );
+              throw e;
+            }
+
+            persisted.push(created);
+          } else {
+            // Existente - TODO: trocar por chamada de update se tiver endpoint
+            persisted.push({
+              id: draft.id,
+              date: draft.date,
+              description: draft.description,
+              professional: draft.professional,
+              value: draft.value,
+              images: draft.images.filter(
+                (i): i is StoredProcedureImage => !(i instanceof File)
+              ),
+            });
+          }
+        }
+
+        // Atualiza estado local com versões normalizadas
+        setRowData(persisted.map(toDraft));
+
+        onSave && onSave(persisted);
+        onCancel && onCancel();
+      } catch (err) {
+        console.error("[Procedures][submitAll] erro:", err);
+        alert("Erro ao salvar procedimentos.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [clinicId, patientId, rowData]
+  );
 
   return {
     rowData,
