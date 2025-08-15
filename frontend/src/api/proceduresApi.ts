@@ -1,372 +1,244 @@
 import { API_BASE_URL } from "./apiBase";
 import type { Procedure } from "../components/ClinicAdminPanel_Managers/types";
 
-/**
- * Função util para montar URL base + path, sem duplicar barras.
- */
+/* -------------------------------------------------------------
+ * Utilidades
+ * ----------------------------------------------------------- */
 function base() {
   return (API_BASE_URL || "").replace(/\/+$/, "");
 }
-
-function joinPath(...parts: (string | number | undefined)[]) {
+function joinPath(...parts: (string | number)[]) {
   return (
     "/" +
     parts
-      .filter(p => p !== undefined && p !== null && String(p).length > 0)
-      .map(p => String(p).replace(/^\/+|\/+$/g, ""))
+      .map(p => String(p).trim())
+      .filter(p => p.length > 0)
+      .map(p => p.replace(/^\/+|\/+$/g, ""))
       .join("/")
   );
 }
-
 function withQuery(url: string, params?: Record<string, string | number | undefined | null>) {
   if (!params) return url;
-  const u = new URL(url, "http://dummy");
+  const u = new URL(url, "http://dummy.local");
   Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") {
-      u.searchParams.set(k, String(v));
-    }
+    if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
   });
-  const qs = u.search ? u.search : "";
-  // Remonta mantendo host original retirado
-  return url + qs;
+  return url + u.search;
 }
-
-async function doJson<T>(input: RequestInfo, init: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${init.method || "GET"} ${input} -> ${res.status} ${res.statusText} ${text.slice(0, 300)}`);
+async function readBody(res: Response) {
+  const txt = await res.text().catch(() => "");
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return txt;
   }
-  return (await res.json()) as T;
+}
+function short(v: any, max = 300) {
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s.length > max ? s.slice(0, max) + "..." : s;
 }
 
-/* ------------------------------------------------------------------ */
-/* Tipos                                                              */
-/* ------------------------------------------------------------------ */
-
+/* -------------------------------------------------------------
+ * Tipos de payload
+ * ----------------------------------------------------------- */
 export interface CreateProcedurePayload {
   date: string | null;
   description: string;
   professional: string;
   value: string;
   clinicId: string;
-  // Adicione campos extras se necessários
 }
+export interface UpdateProcedurePayload extends CreateProcedurePayload {}
 
-export interface UpdateProcedurePayload extends CreateProcedurePayload {
-  // Caso mudanças específicas
-}
+type ProcedureResponse = Procedure;
 
-interface ProcedureResponse extends Procedure {} // Ajuste se resposta difere
-
-/* ------------------------------------------------------------------ */
-/* Rota de criação com fallback                                       */
-/* ------------------------------------------------------------------ */
-
-/**
- * Tenta múltiplas rotas até alguma funcionar (não retornar 404).
- * Após identificar a correta nos logs, simplifique e mantenha só ela.
- */
+/* -------------------------------------------------------------
+ * Criar procedimento
+ * POST /api/patients/:patientId/procedures
+ * ----------------------------------------------------------- */
 export async function addPatientProcedure(
   patientId: number,
   data: CreateProcedurePayload
 ): Promise<ProcedureResponse> {
-  const attempts: {
-    label: string;
-    url: string;
-    method: string;
-    body: any;
-  }[] = [];
-
-  // Candidatos comuns (ajuste conforme seu backend real):
-  // 1. /api/patients/:id/procedures (prefixo api)
-  attempts.push({
-    label: "api-nested",
-    url: base() + joinPath("api", "patients", patientId, "procedures"),
-    method: "POST",
-    body: data, // clinicId incluído no JSON
-  });
-
-  // 2. /patients/:id/procedures (sem prefixo)
-  attempts.push({
-    label: "nested",
-    url: base() + joinPath("patients", patientId, "procedures"),
-    method: "POST",
-    body: data,
-  });
-
-  // 3. /api/procedures (patientId no body)
-  attempts.push({
-    label: "api-flat",
-    url: base() + joinPath("api", "procedures"),
-    method: "POST",
-    body: { patientId, ...data },
-  });
-
-  // 4. /procedures (flat, sem /api)
-  attempts.push({
-    label: "flat",
-    url: base() + joinPath("procedures"),
-    method: "POST",
-    body: { patientId, ...data },
-  });
-
-  const errors: string[] = [];
-
-  for (const attempt of attempts) {
-    try {
-      const res = await fetch(
-        withQuery(attempt.url, {
-          // Algumas APIs preferem clinicId em query; mantemos redundante por segurança
-          clinicId: data.clinicId,
-        }),
-        {
-          method: attempt.method,
-            headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(attempt.body),
-        }
-      );
-
-      if (res.status === 404) {
-        errors.push(`[${attempt.label}] 404 ${attempt.url}`);
-        continue;
-      }
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        errors.push(
-          `[${attempt.label}] ${res.status} ${res.statusText} ${attempt.url} :: ${txt.slice(
-            0,
-            150
-          )}`
-        );
-        continue;
-      }
-      const json = await res.json();
-      console.info(
-        `[addPatientProcedure] SUCESSO via rota '${attempt.label}': ${attempt.url}`
-      );
-      return json;
-    } catch (e: any) {
-      errors.push(`[${attempt.label}] EXCEPTION ${attempt.url} :: ${e.message}`);
-    }
-  }
-
-  console.error(
-    "[addPatientProcedure] Todas as tentativas falharam:\n" +
-      errors.join("\n")
+  const url = withQuery(
+    base() + joinPath("api", "patients", patientId, "procedures"),
+    { clinicId: data.clinicId }
   );
-  throw new Error("Nenhuma rota de criação de procedimento funcionou.");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error("[addPatientProcedure] FAIL", res.status, body);
+    throw new Error(
+      `Erro ao criar procedimento (${res.status}): ${short(body)}`
+    );
+  }
+  const json = await res.json();
+  console.info("[addPatientProcedure] OK", json);
+  return json;
 }
 
-/* ------------------------------------------------------------------ */
-/* Update com fallback (se ainda não sabe a rota real)                */
-/* ------------------------------------------------------------------ */
+/* -------------------------------------------------------------
+ * Atualizar procedimento (opcional)
+ * PUT /api/patients/procedures/:procedureId
+ * ----------------------------------------------------------- */
 export async function updatePatientProcedure(
   procedureId: number,
   data: UpdateProcedurePayload
 ): Promise<ProcedureResponse> {
-  const attempts = [
-    {
-      label: "api-flat",
-      url: base() + joinPath("api", "patients", "procedures", procedureId),
-      body: data,
-    },
-    {
-      label: "flat",
-      url: base() + joinPath("patients", "procedures", procedureId),
-      body: data,
-    },
-    {
-      label: "api-generic",
-      url: base() + joinPath("api", "procedures", procedureId),
-      body: { ...data },
-    },
-    {
-      label: "generic",
-      url: base() + joinPath("procedures", procedureId),
-      body: { ...data },
-    },
-  ];
-
-  const errors: string[] = [];
-  for (const a of attempts) {
-    try {
-      const res = await fetch(
-        withQuery(a.url, { clinicId: data.clinicId }),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(a.body),
-        }
-      );
-      if (res.status === 404) {
-        errors.push(`[update ${a.label}] 404 ${a.url}`);
-        continue;
-      }
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        errors.push(
-          `[update ${a.label}] ${res.status} ${res.statusText} ${a.url} :: ${t.slice(
-            0,
-            120
-          )}`
-        );
-        continue;
-      }
-      const json = await res.json();
-      console.info(
-        `[updatePatientProcedure] SUCESSO via rota '${a.label}': ${a.url}`
-      );
-      return json;
-    } catch (e: any) {
-      errors.push(`[update ${a.label}] EXCEPTION ${a.url} :: ${e.message}`);
-    }
-  }
-  console.error(
-    "[updatePatientProcedure] Falhou em todas as tentativas:\n" +
-      errors.join("\n")
+  const url = withQuery(
+    base() + joinPath("api", "patients", "procedures", procedureId),
+    { clinicId: data.clinicId }
   );
-  throw new Error("Nenhuma rota de update funcionou.");
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error("[updatePatientProcedure] FAIL", res.status, body);
+    throw new Error(
+      `Erro ao atualizar procedimento (${res.status}): ${short(body)}`
+    );
+  }
+  const json = await res.json();
+  console.info("[updatePatientProcedure] OK", json);
+  return json;
 }
 
-/* ------------------------------------------------------------------ */
-/* Delete (padrões mais simples)                                      */
-/* ------------------------------------------------------------------ */
+/* -------------------------------------------------------------
+ * Deletar procedimento
+ * DELETE /api/patients/procedures/:procedureId
+ * ----------------------------------------------------------- */
 export async function deletePatientProcedure(
   procedureId: number,
   clinicId: string
 ): Promise<void> {
-  const candidates = [
+  const url = withQuery(
     base() + joinPath("api", "patients", "procedures", procedureId),
-    base() + joinPath("patients", "procedures", procedureId),
-    base() + joinPath("api", "procedures", procedureId),
-    base() + joinPath("procedures", procedureId),
-  ];
-  const errors: string[] = [];
-  for (const url of candidates) {
-    try {
-      const res = await fetch(withQuery(url, { clinicId }), {
-        method: "DELETE",
-      });
-      if (res.status === 404) {
-        errors.push(`[del] 404 ${url}`);
-        continue;
-      }
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        errors.push(
-          `[del] ${res.status} ${res.statusText} ${url} :: ${t.slice(0, 120)}`
-        );
-        continue;
-      }
-      console.info(`[deletePatientProcedure] SUCESSO em ${url}`);
-      return;
-    } catch (e: any) {
-      errors.push(`[del] EXCEPTION ${url} :: ${e.message}`);
-    }
-  }
-  console.error(
-    "[deletePatientProcedure] Falhou:\n" + errors.join("\n")
+    { clinicId }
   );
-  throw new Error("Nenhuma rota de delete funcionou.");
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error("[deletePatientProcedure] FAIL", res.status, body);
+    throw new Error(
+      `Erro ao deletar procedimento (${res.status}): ${short(body)}`
+    );
+  }
+  console.info("[deletePatientProcedure] OK", procedureId);
 }
 
-/* ------------------------------------------------------------------ */
-/* Upload de imagem                                                   */
-/* ------------------------------------------------------------------ */
+/* -------------------------------------------------------------
+ * Upload de imagem
+ * POST /api/patients/:patientId/procedures/:procedureId/upload-image
+ *
+ * Estratégia:
+ * 1. Tenta 'procedureImage' (campo que você já usava)
+ * 2. Se o backend retornar erro indicando ausência de arquivo (400/415/422/500),
+ *    tenta 'file' e depois 'image'.
+ * 3. Loga qual funcionou. Depois de descobrir, você pode simplificar
+ *    removendo o loop e deixando apenas o campo correto.
+ * ----------------------------------------------------------- */
 export async function uploadProcedureImage(
   patientId: number,
   procedureId: number,
   file: File,
   clinicId: string
 ) {
-  const formData = new FormData();
-  formData.append("procedureImage", file);
-  formData.append("clinicId", clinicId);
-
-  // Tentar com e sem /api
-  const urls = [
+  const url = withQuery(
     base() +
-      joinPath("api", "patients", patientId, "procedures", procedureId, "upload-image"),
-    base() +
-      joinPath("patients", patientId, "procedures", procedureId, "upload-image"),
-  ];
+      joinPath(
+        "api",
+        "patients",
+        patientId,
+        "procedures",
+        procedureId,
+        "upload-image"
+      ),
+    { clinicId }
+  );
 
-  const errors: string[] = [];
-  for (const url of urls) {
+  // Ordem de tentativa
+  const fieldNames = ["procedureImage", "file", "image"];
+  const attemptsErrors: string[] = [];
+
+  for (const field of fieldNames) {
+    const formData = new FormData();
+    formData.append(field, file);
+    formData.append("clinicId", clinicId);
+
     try {
       const res = await fetch(url, { method: "POST", body: formData });
-      if (res.status === 404) {
-        errors.push(`[upload] 404 ${url}`);
-        continue;
+      if (res.ok) {
+        const json = await res.json();
+        console.info(`[uploadProcedureImage] OK com campo '${field}'`, json);
+        return json;
       }
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        errors.push(
-          `[upload] ${res.status} ${res.statusText} ${url} :: ${t.slice(
-            0,
-            140
-          )}`
+
+      const body = await readBody(res);
+
+      // Critérios para tentar próximo campo: status típico de "campo incorreto / arquivo ausente"
+      if ([400, 415, 422, 500].includes(res.status)) {
+        // Tenta apenas se não for claramente outra falha (ex. auth 401/403 ou 404)
+        attemptsErrors.push(
+          `[${field}] ${res.status} ${res.statusText} :: ${short(body)}`
         );
-        continue;
+        continue; // tenta próximo campo
       }
-      const json = await res.json();
-      console.info(`[uploadProcedureImage] SUCESSO em ${url}`);
-      return json;
+
+      // Se for outro status (401, 403, 404 etc.), aborta e lança direto.
+      console.error("[uploadProcedureImage] Falha não recuperável", res.status, body);
+      throw new Error(
+        `Erro ao enviar imagem (${res.status}) com campo '${field}': ${short(body)}`
+      );
     } catch (e: any) {
-      errors.push(`[upload] EXCEPTION ${url} :: ${e.message}`);
+      attemptsErrors.push(`[${field}] EXCEPTION ${e.message}`);
+      continue;
     }
   }
+
   console.error(
-    "[uploadProcedureImage] Falhou:\n" + errors.join("\n")
+    "[uploadProcedureImage] Todos os campos falharam:\n" +
+      attemptsErrors.join("\n")
   );
-  throw new Error("Nenhuma rota de upload de imagem funcionou.");
+  throw new Error(
+    "Falha ao enviar imagem. Detalhes:\n" + attemptsErrors.join("\n")
+  );
 }
 
-/* ------------------------------------------------------------------ */
-/* Delete imagem                                                      */
-/* ------------------------------------------------------------------ */
+/* -------------------------------------------------------------
+ * Deletar imagem
+ * DELETE /api/patients/procedures/:procedureId/images/:imageId
+ * ----------------------------------------------------------- */
 export async function deleteProcedureImage(
   procedureId: number,
   imageId: number,
   clinicId: string
 ) {
-  const urls = [
+  const url = withQuery(
     base() +
-      joinPath("api", "patients", "procedures", procedureId, "images", imageId),
-    base() +
-      joinPath("patients", "procedures", procedureId, "images", imageId),
-    base() + joinPath("api", "procedures", procedureId, "images", imageId),
-    base() + joinPath("procedures", procedureId, "images", imageId),
-  ];
-  const errors: string[] = [];
-  for (const url of urls) {
-    try {
-      const res = await fetch(withQuery(url, { clinicId }), {
-        method: "DELETE",
-      });
-      if (res.status === 404) {
-        errors.push(`[del-img] 404 ${url}`);
-        continue;
-      }
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        errors.push(
-          `[del-img] ${res.status} ${res.statusText} ${url} :: ${t.slice(
-            0,
-            140
-          )}`
-        );
-        continue;
-      }
-      console.info(`[deleteProcedureImage] SUCESSO em ${url}`);
-      return;
-    } catch (e: any) {
-      errors.push(`[del-img] EXCEPTION ${url} :: ${e.message}`);
-    }
-  }
-  console.error(
-    "[deleteProcedureImage] Falhou:\n" + errors.join("\n")
+      joinPath(
+        "api",
+        "patients",
+        "procedures",
+        procedureId,
+        "images",
+        imageId
+      ),
+    { clinicId }
   );
-  throw new Error("Nenhuma rota de delete de imagem funcionou.");
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error("[deleteProcedureImage] FAIL", res.status, body);
+    throw new Error(
+      `Erro ao deletar imagem (${res.status}): ${short(body)}`
+    );
+  }
+  console.info("[deleteProcedureImage] OK", imageId);
 }

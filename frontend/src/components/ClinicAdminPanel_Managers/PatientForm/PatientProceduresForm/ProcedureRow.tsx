@@ -20,18 +20,9 @@ function normalizeImageUrl(img: ProcedureImage): string {
   if (img instanceof File) return URL.createObjectURL(img);
   const raw = img.url?.trim() || "";
   if (!raw) return "";
-  if (/^https?:/i.test(raw)) {
-    try {
-      const u = new URL(raw);
-      if (u.host.includes("localhost")) return fileUrl(u.pathname + u.search);
-      return raw;
-    } catch {
-      return raw;
-    }
-  }
-  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
+  if (/^https?:/i.test(raw)) return raw;
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/"))
     return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
-  }
   return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
@@ -58,6 +49,8 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
     e.target.value = "";
   }
 
+  const disabledImage = procedure.id <= 0;
+
   return (
     <div className="w-full border border-[#e5e8ee] rounded-xl p-3 bg-gray-50">
       <div className="grid grid-cols-[100px_120px_70px_40px] gap-2 items-center w-full mb-1">
@@ -65,7 +58,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="date"
             value={normalizedDate}
-            onChange={(e) => handleFieldChange("date", e.target.value)}
+            onChange={e => handleFieldChange("date", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             max={new Date().toISOString().slice(0, 10)}
             placeholder="Data"
@@ -76,7 +69,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="text"
             value={procedure.professional ?? ""}
-            onChange={(e) => handleFieldChange("professional", e.target.value)}
+            onChange={e => handleFieldChange("professional", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             placeholder="Profissional"
             aria-label="Profissional"
@@ -86,7 +79,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
           <input
             type="text"
             value={procedure.value ?? ""}
-            onChange={(e) => handleFieldChange("value", e.target.value)}
+            onChange={e => handleFieldChange("value", e.target.value)}
             className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
             placeholder="R$"
             aria-label="Valor"
@@ -108,7 +101,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
       <div>
         <textarea
           value={procedure.description ?? ""}
-          onChange={(e) => handleFieldChange("description", e.target.value)}
+          onChange={e => handleFieldChange("description", e.target.value)}
           className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs w-full resize-none focus:border-[#e11d48] bg-white"
           style={{ minHeight: 36, maxHeight: 120, overflowY: "auto" }}
           placeholder="Descreva o procedimento realizado"
@@ -156,9 +149,18 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
         })}
         <button
           type="button"
-          className="flex items-center justify-center w-14 h-14 rounded-xl border-2 border-dashed border-[#c8d1e1] bg-[#f7f9fb] hover:bg-[#e5e8ee] text-[#e11d48] transition"
-            onClick={() => fileInputRef.current?.click()}
-          title="Adicionar imagem"
+          disabled={disabledImage}
+          className={`flex items-center justify-center w-14 h-14 rounded-xl border-2 border-dashed ${
+            disabledImage
+              ? "border-gray-300 text-gray-300 cursor-not-allowed"
+              : "border-[#c8d1e1] bg-[#f7f9fb] hover:bg-[#e5e8ee] text-[#e11d48]"
+          } transition`}
+          onClick={() => !disabledImage && fileInputRef.current?.click()}
+          title={
+            disabledImage
+              ? "Salve o procedimento antes de adicionar imagens"
+              : "Adicionar imagem"
+          }
           aria-label="Adicionar imagem"
         >
           <Plus className="w-5 h-5" />
