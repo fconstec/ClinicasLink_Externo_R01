@@ -29,7 +29,6 @@ const PRE_EXISTING_DISEASES = [
 
 const DEFAULT_TCLE = `Declaro que fui informado(a) sobre o atendimento clínico e consinto, de forma livre e esclarecida, à realização dos procedimentos propostos.`;
 
-// Usa a base configurada (sem hardcode localhost)
 const API_URL = (API_BASE_URL || "").replace(/\/+$/, "");
 
 // Helpers
@@ -77,7 +76,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
   const [habits, setHabits] = useState("");
   const [observations, setObservations] = useState("");
 
-  // Campos do TCLE
+  // TCLE
   const [tcleChecked, setTcleChecked] = useState(false);
   const [fullName, setFullName] = useState("");
   const [tcleContent, setTcleContent] = useState(DEFAULT_TCLE);
@@ -90,7 +89,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
 
   const normalizedPhotoUrl = normalizePhotoUrl(patientPhotoUrl);
 
-  // Carrega anamnese
+  // Carrega anamnese existente
   useEffect(() => {
     const clinicId = getClinicId();
     if (!clinicId) return;
@@ -101,7 +100,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         const res = await fetch(url);
         if (!res.ok) {
           const txt = await res.text();
-            console.warn("[ANAMNESE][LOAD] status:", res.status, "body:", txt);
+          console.warn("[ANAMNESE][LOAD] status:", res.status, "body:", txt);
           return;
         }
         const data = await res.json();
@@ -152,7 +151,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
   function canPatientSubmit() {
     return tcleChecked && !!fullName.trim() && !!chiefComplaint.trim();
   }
-
   function canSecretarySubmit() {
     return !!chiefComplaint.trim();
   }
@@ -175,7 +173,9 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
     setSubmitting(true);
 
     const now = new Date().toISOString();
-    const payload = {
+
+    // Monta payload base
+    const payload: any = {
       patientId,
       professionalId,
       anamnese: JSON.stringify({
@@ -194,21 +194,26 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
       }),
       tcle: tcleContent,
       tcle_concordado: isPatientVersion,
-      tcle_nome: isPatientVersion ? fullName.trim() : "",
-      tcle_data_hora: isPatientVersion ? now : "",
     };
+
+    if (isPatientVersion) {
+      payload.tcle_nome = fullName.trim();
+      payload.tcle_data_hora = now;
+    } else {
+      // Importante: usar null em vez de "" para evitar erro 22007 no backend
+      payload.tcle_nome = null;
+      payload.tcle_data_hora = null;
+    }
 
     const url = `${API_URL}/api/patients/${patientId}/anamnese?clinicId=${clinicId}`;
 
     try {
-      // Primeiro tenta PUT (como você tinha)
       let res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      // Se backend não aceitar PUT, tente POST automaticamente
       if (res.status === 404 || res.status === 405) {
         console.warn("[ANAMNESE][SAVE] PUT retornou", res.status, "tentando POST...");
         res = await fetch(url, {
@@ -221,12 +226,12 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
       if (!res.ok) {
         const txt = await res.text();
         console.error("[ANAMNESE][SAVE][ERRO]", res.status, txt, "payload:", payload);
-        alert("Erro ao salvar anamnese (status " + res.status + "). Veja console.");
+        alert("Erro ao salvar anamnese (status " + res.status + "). Ver console.");
         return;
       }
 
-      const data = await res.text(); // pode ser vazio
-      console.log("[ANAMNESE][SAVE] sucesso, resposta bruta:", data);
+      const data = await res.text();
+      console.log("[ANAMNESE][SAVE] sucesso, resposta:", data);
       alert("Anamnese salva com sucesso!");
       onSave && (await onSave(payload));
       onCancel && onCancel();
@@ -451,7 +456,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           )}
         </div>
 
-        {/* Modal editar termo */}
         {isEditingTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-lg relative">
@@ -479,7 +483,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Modal termo completo */}
         {showFullTerm && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
@@ -504,7 +507,6 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
           </div>
         )}
 
-        {/* Modal compartilhar */}
         {shareModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
             <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
