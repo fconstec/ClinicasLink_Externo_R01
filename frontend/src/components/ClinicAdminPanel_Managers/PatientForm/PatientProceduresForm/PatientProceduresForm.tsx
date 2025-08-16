@@ -16,8 +16,8 @@ import {
 
 interface PatientProceduresFormProps {
   patientId: number;
-  procedures?: any[];
-  onSave?: (newProcedures: any[]) => void;
+  procedures?: PersistedProcedure[];
+  onSave?: (newProcedures: PersistedProcedure[]) => void;
   onCancel?: () => void;
   closeOnSave?: boolean;
 }
@@ -31,10 +31,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 }) => {
   const { id: clinicId } = useParams<{ id: string }>();
 
-  // Congela lista inicial para não ser reescrita em re-renders
+  // Congela a lista inicial para evitar que re-renders do pai sobrescrevam adições locais.
   const frozenInitialRef = useRef<PersistedProcedure[] | null>(null);
   if (frozenInitialRef.current === null) {
-    frozenInitialRef.current = (procedures || []).map((p: any) => ({
+    frozenInitialRef.current = (procedures || []).map(p => ({
       id: p.id,
       date: p.date,
       description: p.description,
@@ -63,16 +63,15 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Scroll até a última linha adicionada
   useEffect(() => {
     if (!lastAddedIdRef.current) return;
     const id = lastAddedIdRef.current;
     const el = containerRef.current?.querySelector(
       `[data-proc-row-id="${id}"]`
     ) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [rowData, lastAddedIdRef]);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [rowData]);
 
   async function handleUploadImage(procedureId: number, file: File) {
     if (!clinicId) {
@@ -91,7 +90,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
         clinicId
       );
       setRowData((prev: ProcedureDraft[]) =>
-        prev.map((p: ProcedureDraft) =>
+        prev.map(p =>
           p.id === procedureId
             ? {
                 ...p,
@@ -120,8 +119,8 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
         return;
       }
     }
-    setRowData((prev: ProcedureDraft[]) =>
-      prev.map((p: ProcedureDraft) =>
+    setRowData(prev =>
+      prev.map(p =>
         p.id === procedureId
           ? { ...p, images: p.images.filter(img => img !== image) }
           : p
@@ -136,7 +135,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
           e.preventDefault();
           submitAll({
             onSave: persisted => {
-              onSave && onSave(persisted as any);
+              onSave && onSave(persisted);
               if (closeOnSave && onCancel) onCancel();
             },
           });
@@ -159,7 +158,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
         <section
           ref={containerRef}
-            className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto"
+          className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto"
         >
           <div>
             <div className="flex items-center justify-between mb-3">
