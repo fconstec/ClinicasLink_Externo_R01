@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import PatientsManager from "./PatientsManager";
 import PatientMainDataForm from "./PatientForm/PatientMainDataForm";
-import { PatientProceduresForm } from "./PatientForm/PatientProceduresForm";
 import PatientAnamneseTcleForm from "./PatientForm/PatientAnamneseTcleForm";
 import PatientFullView from "./PatientForm/PatientFullView";
-import type { Patient, Procedure } from "./types";
+import type { Patient } from "./types";
 import {
   fetchPatients,
   deletePatient,
@@ -25,7 +24,6 @@ const PatientsManagerContainer: React.FC = () => {
   const [clinicId, setClinicId] = useState<string | null>(null);
 
   const [showMainDataForm, setShowMainDataForm] = useState(false);
-  const [showProceduresForm, setShowProceduresForm] = useState(false);
   const [showAnamneseTcleForm, setShowAnamneseTcleForm] = useState(false);
   const [showFullView, setShowFullView] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -83,11 +81,6 @@ const PatientsManagerContainer: React.FC = () => {
     setShowMainDataForm(true);
   };
 
-  const handleShowProcedures = (patient: Patient) => {
-    setSelectedPatient(patient);
-    setShowProceduresForm(true);
-  };
-
   const handleShowAnamneseTcle = (patient: Patient) => {
     setSelectedPatient(patient);
     setShowAnamneseTcleForm(true);
@@ -108,6 +101,7 @@ const PatientsManagerContainer: React.FC = () => {
   if (loading) return <div className="p-4 text-center text-gray-500">Carregando pacientes...</div>;
   if (error || !clinicId) return <div className="text-center text-red-500 p-4">{error}</div>;
 
+  // Form principal de dados cadastrais
   if (showMainDataForm && selectedPatient) {
     return (
       <PatientMainDataForm
@@ -123,22 +117,7 @@ const PatientsManagerContainer: React.FC = () => {
     );
   }
 
-  if (showProceduresForm && selectedPatient) {
-    return (
-      <PatientProceduresForm
-        patientId={selectedPatient.id}
-        procedures={selectedPatient.procedures || []}
-        onSave={(newProcedures: Procedure[]) => {
-          setPatients(prev =>
-            prev.map(p => (p.id === selectedPatient.id ? { ...p, procedures: newProcedures } : p))
-          );
-          setShowProceduresForm(false);
-        }}
-        onCancel={() => setShowProceduresForm(false)}
-      />
-    );
-  }
-
+  // Anamnese / TCLE
   if (showAnamneseTcleForm && selectedPatient) {
     return (
       <PatientAnamneseTcleForm
@@ -165,6 +144,7 @@ const PatientsManagerContainer: React.FC = () => {
     );
   }
 
+  // Visualização completa
   if (showFullView && fullPatientData) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 py-8 px-2 overflow-y-auto">
@@ -191,7 +171,9 @@ const PatientsManagerContainer: React.FC = () => {
       setPatients={setPatients}
       onDeletePatient={handleDeletePatient}
       onShowMainData={handleShowMainData}
-      onShowProcedures={handleShowProcedures}
+      onShowProcedures={
+        undefined /* sempre usamos o modal interno agora; deixar undefined */
+      }
       onShowAnamneseTcle={handleShowAnamneseTcle}
       getPatientFullData={
         clinicId

@@ -40,7 +40,7 @@ export interface PatientsManagerProps {
   setPatients: React.Dispatch<React.SetStateAction<Patient[]>>;
   onDeletePatient: (id: number) => void;
   onShowMainData: (patient: Patient) => void;
-  onShowProcedures: (patient: Patient) => void;
+  onShowProcedures?: (patient: Patient) => void; // agora pode vir do container, mas também usamos local
   onShowAnamneseTcle: (patient: Patient) => void;
   getPatientFullData?: (patient: Patient) => Promise<{
     patient: any;
@@ -58,7 +58,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   setPatients,
   onDeletePatient,
   onShowMainData,
-  onShowProcedures,
+  onShowProcedures, // (se fornecido, ainda podemos delegar)
   onShowAnamneseTcle,
   getPatientFullData,
   onShowFullView,
@@ -69,7 +69,10 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [showAnamneseTcleModal, setShowAnamneseTcleModal] = useState<Patient | null>(null);
+
+  // Modal de procedimentos
   const [showProceduresModal, setShowProceduresModal] = useState<Patient | null>(null);
+  const [loadingProceduresModal, setLoadingProceduresModal] = useState(false);
 
   const filteredPatients = patients.filter((patient) =>
     (patient.name + ' ' + (patient.phone || '') + ' ' + (patient.email || ''))
@@ -108,7 +111,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       } else {
         const newPatient = await addPatient({
           ...formData,
-            clinicId,
+          clinicId,
         });
         setPatients(prev => [...prev, newPatient]);
       }
@@ -144,6 +147,10 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     }
   };
 
+  /**
+   * Salva procedimentos (já criados/atualizados pelo formulário)
+   * Depois recarrega procedures e mantém modal aberto (NÃO fecha).
+   */
   const handleSaveProcedures = async (_procedures: any[]) => {
     if (!showProceduresModal) return;
     const patientId = showProceduresModal.id;
@@ -153,10 +160,46 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       setPatients(prev =>
         prev.map(p => (p.id === patientId ? { ...p, procedures: updatedProcedures } : p))
       );
-      setShowProceduresModal(null);
+      // NÃO fechar o modal automaticamente:
+      // setShowProceduresModal(null);
+      // Atualiza a referência do modal com a lista nova:
+      setShowProceduresModal(prev =>
+        prev ? { ...prev, procedures: updatedProcedures } : prev
+      );
     } catch {
       alert('Erro ao salvar procedimentos do paciente.');
     }
+  };
+
+  /**
+   * Abre modal de procedimentos carregando procedures se necessário.
+   */
+  const handleOpenProceduresModal = async (patient: Patient) => {
+    if (loadingProceduresModal) return;
+    // Se quiser delegar externamente:
+    if (onShowProcedures) {
+      onShowProcedures(patient);
+      return;
+    }
+    const clinicId = getClinicId();
+    let targetPatient = patient;
+    if (!patient.procedures) {
+      try {
+        setLoadingProceduresModal(true);
+        const procs = await fetchPatientProcedures(patient.id, clinicId);
+        // Atualiza lista de pacientes
+        setPatients(prev =>
+          prev.map(p => (p.id === patient.id ? { ...p, procedures: procs } : p))
+        );
+        targetPatient = { ...patient, procedures: procs };
+      } catch {
+        alert('Erro ao carregar procedimentos do paciente.');
+        return;
+      } finally {
+        setLoadingProceduresModal(false);
+      }
+    }
+    setShowProceduresModal(targetPatient);
   };
 
   const addButtonClasses =
@@ -189,10 +232,11 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
 
       {showProceduresModal && (
         <PatientProceduresForm
-          patientId={showProceduresModal.id}
+            patientId={showProceduresModal.id}
           procedures={showProceduresModal.procedures}
           onSave={handleSaveProcedures}
           onCancel={() => setShowProceduresModal(null)}
+          // closeOnSave={false} // garantir que não fecha automaticamente
         />
       )}
 
@@ -303,10 +347,11 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
                         <ActivitySquare className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => setShowProceduresModal(patient)}
-                        className="p-2 rounded hover:bg-sky-50 text-sky-600 hover:text-sky-800 transition"
+                        onClick={() => handleOpenProceduresModal(patient)}
+                        className="p-2 rounded hover:bg-sky-50 text-sky-600 hover:text-sky-800 transition disabled:opacity-50"
                         title="Registros de Procedimentos"
                         aria-label="Registros de Procedimentos"
+                        disabled={loadingProceduresModal}
                       >
                         <BookOpenCheck className="h-4 w-4" />
                       </button>
