@@ -37,6 +37,14 @@ function short(v: any, max = 300) {
   const s = typeof v === "string" ? v : JSON.stringify(v);
   return s.length > max ? s.slice(0, max) + "..." : s;
 }
+async function ensureOk<T = any>(res: Response, ctx: string): Promise<T> {
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error(`[${ctx}] FAIL`, res.status, body);
+    throw new Error(`${ctx} (${res.status}): ${short(body)}`);
+  }
+  return (await res.json()) as T;
+}
 
 /* -------------------------------------------------------------
  * Tipos de payload
@@ -52,9 +60,22 @@ export interface UpdateProcedurePayload extends CreateProcedurePayload {}
 
 type ProcedureResponse = Procedure;
 
+/* Tipos auxiliares para imagens (opcional) */
+export interface ProcedureImageStored {
+  id: number;
+  procedure_id?: number;
+  url: string;
+  fileName?: string | null;
+  filename?: string | null; // caso direto do banco sem map
+  created_at?: string;
+}
+export interface UploadImageResponse {
+  uploaded?: ProcedureImageStored;
+  images?: ProcedureImageStored[];
+}
+
 /* -------------------------------------------------------------
  * Criar procedimento
- * POST /api/patients/:patientId/procedures
  * ----------------------------------------------------------- */
 export async function addPatientProcedure(
   patientId: number,
@@ -69,21 +90,11 @@ export async function addPatientProcedure(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const body = await readBody(res);
-    console.error("[addPatientProcedure] FAIL", res.status, body);
-    throw new Error(
-      `Erro ao criar procedimento (${res.status}): ${short(body)}`
-    );
-  }
-  const json = await res.json();
-  console.info("[addPatientProcedure] OK", json);
-  return json;
+  return ensureOk<ProcedureResponse>(res, "Erro ao criar procedimento");
 }
 
 /* -------------------------------------------------------------
- * Atualizar procedimento (opcional)
- * PUT /api/patients/procedures/:procedureId
+ * Atualizar procedimento
  * ----------------------------------------------------------- */
 export async function updatePatientProcedure(
   procedureId: number,
@@ -98,21 +109,11 @@ export async function updatePatientProcedure(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const body = await readBody(res);
-    console.error("[updatePatientProcedure] FAIL", res.status, body);
-    throw new Error(
-      `Erro ao atualizar procedimento (${res.status}): ${short(body)}`
-    );
-  }
-  const json = await res.json();
-  console.info("[updatePatientProcedure] OK", json);
-  return json;
+  return ensureOk<ProcedureResponse>(res, "Erro ao atualizar procedimento");
 }
 
 /* -------------------------------------------------------------
  * Deletar procedimento
- * DELETE /api/patients/procedures/:procedureId
  * ----------------------------------------------------------- */
 export async function deletePatientProcedure(
   procedureId: number,
@@ -134,22 +135,14 @@ export async function deletePatientProcedure(
 }
 
 /* -------------------------------------------------------------
- * Upload de imagem
- * POST /api/patients/:patientId/procedures/:procedureId/upload-image
- *
- * Estratégia:
- * 1. Tenta 'procedureImage' (campo que você já usava)
- * 2. Se o backend retornar erro indicando ausência de arquivo (400/415/422/500),
- *    tenta 'file' e depois 'image'.
- * 3. Loga qual funcionou. Depois de descobrir, você pode simplificar
- *    removendo o loop e deixando apenas o campo correto.
+ * Upload de imagem (versão simples e final)
  * ----------------------------------------------------------- */
 export async function uploadProcedureImage(
   patientId: number,
   procedureId: number,
   file: File,
   clinicId: string
-) {
+): Promise<UploadImageResponse> {
   const url = withQuery(
     base() +
       joinPath(
@@ -163,57 +156,28 @@ export async function uploadProcedureImage(
     { clinicId }
   );
 
-  // Ordem de tentativa
-  const fieldNames = ["procedureImage", "file", "image"];
-  const attemptsErrors: string[] = [];
+  const formData = new FormData();
+  formData.append("procedureImage", file); // campo esperado pelo backend
+  formData.append("clinicId", clinicId);
 
-  for (const field of fieldNames) {
-    const formData = new FormData();
-    formData.append(field, file);
-    formData.append("clinicId", clinicId);
+  const res = await fetch(url, { method: "POST", body: formData });
 
-    try {
-      const res = await fetch(url, { method: "POST", body: formData });
-      if (res.ok) {
-        const json = await res.json();
-        console.info(`[uploadProcedureImage] OK com campo '${field}'`, json);
-        return json;
-      }
-
-      const body = await readBody(res);
-
-      // Critérios para tentar próximo campo: status típico de "campo incorreto / arquivo ausente"
-      if ([400, 415, 422, 500].includes(res.status)) {
-        // Tenta apenas se não for claramente outra falha (ex. auth 401/403 ou 404)
-        attemptsErrors.push(
-          `[${field}] ${res.status} ${res.statusText} :: ${short(body)}`
-        );
-        continue; // tenta próximo campo
-      }
-
-      // Se for outro status (401, 403, 404 etc.), aborta e lança direto.
-      console.error("[uploadProcedureImage] Falha não recuperável", res.status, body);
-      throw new Error(
-        `Erro ao enviar imagem (${res.status}) com campo '${field}': ${short(body)}`
-      );
-    } catch (e: any) {
-      attemptsErrors.push(`[${field}] EXCEPTION ${e.message}`);
-      continue;
-    }
+  // Leitura custom porque queremos mostrar rapidamente a mensagem do backend
+  if (!res.ok) {
+    const body = await readBody(res);
+    console.error("[uploadProcedureImage] FAIL", res.status, body);
+    throw new Error(
+      `Erro ao enviar imagem (${res.status}): ${short(body)}`
+    );
   }
 
-  console.error(
-    "[uploadProcedureImage] Todos os campos falharam:\n" +
-      attemptsErrors.join("\n")
-  );
-  throw new Error(
-    "Falha ao enviar imagem. Detalhes:\n" + attemptsErrors.join("\n")
-  );
+  const json = (await res.json()) as UploadImageResponse;
+  console.info("[uploadProcedureImage] OK", json);
+  return json;
 }
 
 /* -------------------------------------------------------------
  * Deletar imagem
- * DELETE /api/patients/procedures/:procedureId/images/:imageId
  * ----------------------------------------------------------- */
 export async function deleteProcedureImage(
   procedureId: number,
