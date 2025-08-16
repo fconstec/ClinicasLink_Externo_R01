@@ -1,208 +1,200 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useRef } from "react";
+import { Trash2, Plus, ZoomIn } from "lucide-react";
+import { fileUrl } from "../../../../api/apiBase";
 import {
   ProcedureDraft,
-  PersistedProcedure,
+  ProcedureImage,
   StoredProcedureImage,
 } from "../../../../types/procedureDraft";
-import {
-  addPatientProcedure,
-  // updatePatientProcedure,
-  deletePatientProcedure,
-} from "../../../../api/proceduresApi";
 
-/**
- * Converte um procedimento persistido em draft editável.
- */
-export function toDraft(p: PersistedProcedure): ProcedureDraft {
-  return {
-    id: p.id,
-    date: p.date || "",
-    description: p.description || "",
-    professional: p.professional || "",
-    value: p.value || "",
-    images: (p.images || []) as StoredProcedureImage[],
-  };
+interface ProcedureRowProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
+  procedure: ProcedureDraft;
+  onChange: (update: Partial<ProcedureDraft>) => void;
+  onRemove: () => void;
+  onAddImage: (file: File) => void;
+  onRemoveImage: (img: ProcedureImage | StoredProcedureImage) => void;
+  onViewImage: (imgIdx: number) => void;
 }
 
-interface SubmitAllOptions {
-  onSave?: (persisted: PersistedProcedure[]) => void;
-}
-
-/**
- * Wrapper para confirmar sem quebrar ESLint (no-restricted-globals).
- * Pode ser substituído futuramente por modal customizado.
- */
-function safeConfirm(message: string) {
-  if (typeof window !== "undefined" && typeof window.confirm === "function") {
-    return window.confirm(message);
+function normalizeImageUrl(img: ProcedureImage): string {
+  if (img instanceof File) return URL.createObjectURL(img);
+  const raw = (img as any).url?.trim() || "";
+  if (!raw) return "";
+  if (/^https?:/i.test(raw)) return raw;
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
+    return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
   }
-  return true;
+  return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
-export function useProcedureForm(
-  patientId: number,
-  clinicId?: string,
-  optionalInitial?: PersistedProcedure[]
-) {
-  const initializedRef = useRef(false);
-  const [rowData, setRowData] = useState<ProcedureDraft[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [savingMessage, setSavingMessage] = useState<string | null>(null);
-  const tempIdCounter = useRef(-1);
-  const lastAddedIdRef = useRef<number | null>(null);
+const ProcedureRow: React.FC<ProcedureRowProps> = ({
+  procedure,
+  onChange,
+  onRemove,
+  onAddImage,
+  onRemoveImage,
+  onViewImage,
+  className = "",
+  ...divProps
+}) => {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  /**
-   * Inicializa apenas uma vez, mesmo que o componente pai re-renderize.
-   */
-  useEffect(() => {
-    if (!initializedRef.current && optionalInitial) {
-      setRowData(optionalInitial.map(toDraft));
-      initializedRef.current = true;
-    }
-  }, [optionalInitial]);
+  const normalizedDate =
+    !procedure.date || procedure.date === "null" ? "" : procedure.date;
 
-  /**
-   * Adiciona uma linha temporária.
-   */
-  const addProcedureRow = useCallback(() => {
-    setRowData(prev => {
-      const newDraft: ProcedureDraft = {
-        id: tempIdCounter.current,
-        date: "",
-        description: "",
-        professional: "",
-        value: "",
-        images: [],
-      };
-      tempIdCounter.current -= 1;
-      lastAddedIdRef.current = newDraft.id;
-      return [...prev, newDraft];
-    });
-  }, []);
-
-  /**
-   * Remove localmente sem chamar backend (uso interno).
-   */
-  const removeProcedureLocalById = useCallback((id: number) => {
-    setRowData(prev => prev.filter(p => p.id !== id));
-  }, []);
-
-  /**
-   * Remove um procedimento (local ou remoto).
-   */
-  const removeProcedureById = useCallback(
-    async (id: number) => {
-      const proc = rowData.find(p => p.id === id);
-      if (!proc) return;
-
-      // Não salvo ainda
-      if (proc.id <= 0) {
-        removeProcedureLocalById(proc.id);
-        return;
-      }
-
-      if (!clinicId) {
-        window.alert?.("clinicId não encontrado.");
-        return;
-      }
-
-      if (!safeConfirm("Confirmar exclusão do procedimento?")) return;
-
-      try {
-        await deletePatientProcedure(proc.id, clinicId);
-        removeProcedureLocalById(proc.id);
-      } catch (err) {
-        console.error("[Procedures][delete] erro:", err);
-        window.alert?.("Erro ao excluir procedimento.");
-      }
-    },
-    [rowData, clinicId, removeProcedureLocalById]
-  );
-
-  /**
-   * Atualiza campos de uma linha por índice.
-   */
-  const handleRowChange = useCallback(
-    (index: number, update: Partial<ProcedureDraft>) => {
-      setRowData(prev =>
-        prev.map((p, i) => (i === index ? { ...p, ...update } : p))
-      );
-    },
-    []
-  );
-
-  /**
-   * Monta payload para criação/atualização.
-   */
-  function buildPayload(draft: ProcedureDraft) {
-    return {
-      date: draft.date || null,
-      description: draft.description || "",
-      professional: draft.professional || "",
-      value: draft.value || "",
-      clinicId: clinicId || "",
-    };
+  function handleFieldChange(field: keyof ProcedureDraft, value: string) {
+    onChange({ [field]: value });
   }
 
-  /**
-   * Salva todos (cria os novos; update está comentado por enquanto).
-   */
-  const submitAll = useCallback(
-    async ({ onSave }: SubmitAllOptions = {}) => {
-      if (!clinicId) {
-        window.alert?.("clinicId não encontrado.");
-        return;
-      }
-      setSubmitting(true);
-      setSavingMessage(null);
-      try {
-        const persisted: PersistedProcedure[] = [];
+  function handleImageInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onAddImage(file);
+    e.target.value = "";
+  }
 
-        for (const draft of rowData) {
-          const payload = buildPayload(draft);
-          if (draft.id <= 0) {
-            const created = await addPatientProcedure(patientId, payload);
-            persisted.push(created as any);
-          } else {
-            // Caso ative update depois:
-            // const updated = await updatePatientProcedure(draft.id, payload);
-            // persisted.push(updated as any);
-            persisted.push({
-              id: draft.id,
-              date: draft.date,
-              description: draft.description,
-              professional: draft.professional,
-              value: draft.value,
-              images: draft.images.filter(
-                (i): i is StoredProcedureImage => !(i instanceof File)
-              ),
-            });
+  const disabledImage = procedure.id <= 0;
+
+  return (
+    <div
+      className={
+        "w-full border border-[#e5e8ee] rounded-xl p-3 bg-gray-50 " + className
+      }
+      data-proc-row-id={procedure.id}
+      {...divProps}
+    >
+      <div className="grid grid-cols-[100px_120px_70px_40px] gap-2 items-center w-full mb-1">
+        <div>
+          <input
+            type="date"
+            value={normalizedDate}
+            onChange={e => handleFieldChange("date", e.target.value)}
+            className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
+            max={new Date().toISOString().slice(0, 10)}
+            placeholder="Data"
+            aria-label="Data"
+          />
+        </div>
+        <div>
+          <input
+            type="text"
+            value={procedure.professional ?? ""}
+            onChange={e => handleFieldChange("professional", e.target.value)}
+            className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
+            placeholder="Profissional"
+            aria-label="Profissional"
+          />
+        </div>
+        <div>
+          <input
+            type="text"
+            value={procedure.value ?? ""}
+            onChange={e => handleFieldChange("value", e.target.value)}
+            className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs bg-white w-full"
+            placeholder="R$"
+            aria-label="Valor"
+          />
+        </div>
+        <div className="flex flex-row items-center justify-end">
+          <button
+            type="button"
+            className="text-red-600 flex items-center justify-center p-1"
+            onClick={onRemove}
+            title={
+              procedure.id > 0
+                ? "Excluir definitivamente"
+                : "Remover linha (não salva)"
+            }
+            aria-label="Remover procedimento"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <textarea
+          value={procedure.description ?? ""}
+          onChange={e => handleFieldChange("description", e.target.value)}
+          className="border border-[#e5e8ee] rounded-xl px-2 py-1 text-xs w-full resize-none focus:border-[#e11d48] bg-white"
+          style={{ minHeight: 36, maxHeight: 120, overflowY: "auto" }}
+          placeholder="Descreva o procedimento realizado"
+          rows={2}
+          aria-label="Procedimento realizado"
+        />
+      </div>
+
+      <div className="flex gap-1 mt-2 flex-wrap">
+        {procedure.images.map((img, i) => {
+          const url = normalizeImageUrl(img);
+          const name =
+            img instanceof File
+              ? img.name
+              : (img as any).fileName ||
+                (img as any).filename ||
+                `Imagem #${(img as any).id}`;
+          return (
+            <div
+              key={
+                img instanceof File
+                  ? `file-${name}-${i}`
+                  : `persisted-${(img as any).id}-${i}`
+              }
+              className="relative flex flex-col items-center group cursor-pointer"
+            >
+              <img
+                src={url}
+                alt={name}
+                className="w-14 h-14 object-cover rounded-xl border border-[#e5e8ee] mb-1 shadow transition hover:scale-105"
+                onClick={() => onViewImage(i)}
+              />
+              <button
+                type="button"
+                className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-gray-400 opacity-0 group-hover:opacity-100 hover:text-[#e11d48] shadow p-0.5 transition"
+                onClick={() => onRemoveImage(img)}
+                aria-label="Remover imagem"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                className="absolute bottom-1 right-1 bg-white rounded-full opacity-80 group-hover:opacity-100 p-0.5 shadow"
+                title="Ampliar"
+                onClick={() => onViewImage(i)}
+              >
+                <ZoomIn className="w-3 h-3 text-[#e11d48]" />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          disabled={disabledImage}
+          className={`flex items-center justify-center w-14 h-14 rounded-xl border-2 border-dashed ${
+            disabledImage
+              ? "border-gray-300 text-gray-300 cursor-not-allowed"
+              : "border-[#c8d1e1] bg-[#f7f9fb] hover:bg-[#e5e8ee] text-[#e11d48]"
+          } transition`}
+          onClick={() => !disabledImage && fileInputRef.current?.click()}
+          title={
+            disabledImage
+              ? "Salve o procedimento antes de adicionar imagens"
+              : "Adicionar imagem"
           }
-        }
-
-        setRowData(persisted.map(toDraft));
-        onSave && onSave(persisted);
-        setSavingMessage("Alterações salvas.");
-        setTimeout(() => setSavingMessage(null), 2500);
-      } catch (err) {
-        console.error("[Procedures][submitAll] erro geral:", err);
-        window.alert?.("Erro ao salvar procedimentos.");
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [rowData, clinicId, patientId]
+          aria-label="Adicionar imagem"
+        >
+          <Plus className="w-5 h-5" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleImageInputChange}
+        />
+      </div>
+    </div>
   );
+};
 
-  return {
-    rowData,
-    setRowData,
-    submitting,
-    savingMessage,
-    addProcedureRow,
-    removeProcedureById,
-    handleRowChange,
-    submitAll,
-    lastAddedIdRef,
-  };
-}
+export default ProcedureRow;

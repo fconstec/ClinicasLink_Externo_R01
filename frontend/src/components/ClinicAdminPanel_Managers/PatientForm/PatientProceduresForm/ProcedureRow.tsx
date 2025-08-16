@@ -7,11 +7,6 @@ import {
   StoredProcedureImage,
 } from "../../../../types/procedureDraft";
 
-/**
- * Props do componente.
- * Usamos Omit para remover o onChange nativo de HTMLAttributes (que espera um FormEvent),
- * evitando conflito com nossa prop onChange semântica (atualiza o draft).
- */
 interface ProcedureRowProps
   extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
   procedure: ProcedureDraft;
@@ -22,9 +17,6 @@ interface ProcedureRowProps
   onViewImage: (imgIdx: number) => void;
 }
 
-/**
- * Normaliza a URL da imagem (File -> objectURL, relativa -> fileUrl, absoluta mantida).
- */
 function normalizeImageUrl(img: ProcedureImage): string {
   if (img instanceof File) return URL.createObjectURL(img);
   const raw = (img as any).url?.trim() || "";
@@ -36,7 +28,7 @@ function normalizeImageUrl(img: ProcedureImage): string {
   return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
-const ProcedureRowComponent: React.FC<ProcedureRowProps> = ({
+const ProcedureRow: React.FC<ProcedureRowProps> = ({
   procedure,
   onChange,
   onRemove,
@@ -205,4 +197,4 @@ const ProcedureRowComponent: React.FC<ProcedureRowProps> = ({
   );
 };
 
-export default React.memo(ProcedureRowComponent);
+export default ProcedureRow;

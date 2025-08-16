@@ -19,7 +19,7 @@ interface PatientProceduresFormProps {
   procedures?: any[];
   onSave?: (newProcedures: any[]) => void;
   onCancel?: () => void;
-  closeOnSave?: boolean; // se quiser fechar automaticamente ao salvar
+  closeOnSave?: boolean;
 }
 
 const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
@@ -29,16 +29,9 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   onCancel,
   closeOnSave = false,
 }) => {
-  // Captura clinicId da rota. Ajuste se sua rota usar outro nome (ex: clinicId).
-  const { id: clinicIdParam, clinicId: clinicIdAlt } = useParams<{
-    id?: string;
-    clinicId?: string;
-  }>();
-  const clinicId = clinicIdParam || clinicIdAlt;
+  const { id: clinicId } = useParams<{ id: string }>();
 
-  /**
-   * Congela os procedimentos iniciais para não resetar ao re-render do pai.
-   */
+  // Congela lista inicial para não ser reescrita em re-renders
   const frozenInitialRef = useRef<PersistedProcedure[] | null>(null);
   if (frozenInitialRef.current === null) {
     frozenInitialRef.current = (procedures || []).map((p: any) => ({
@@ -70,9 +63,6 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  /**
-   * Scroll suave até a última linha adicionada.
-   */
   useEffect(() => {
     if (!lastAddedIdRef.current) return;
     const id = lastAddedIdRef.current;
@@ -121,13 +111,9 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     procedureId: number,
     image: ProcedureImage
   ) {
-    if (!clinicId) {
-      window.alert?.("clinicId não encontrado.");
-      return;
-    }
     if (!(image instanceof File)) {
       try {
-        await deleteProcedureImage(procedureId, image.id, clinicId);
+        await deleteProcedureImage(procedureId, (image as any).id, clinicId!);
       } catch (err) {
         console.error("[Procedures][deleteImage] erro:", err);
         window.alert?.("Erro ao remover imagem.");
@@ -173,7 +159,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
         <section
           ref={containerRef}
-          className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto"
+            className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto"
         >
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -195,11 +181,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               + Adicionar procedimento
             </button>
             {rowData.length > 0 ? (
-              <div className="flex flex-col gap-4 pb-4">
+              <div className="flex flex-col gap-4">
                 {rowData.map((proc, idx) => (
                   <ProcedureRow
                     key={`${proc.id}_${idx}`}
-                    data-row-index={idx}
                     data-proc-row-id={proc.id}
                     procedure={proc}
                     onChange={update => handleRowChange(idx, update)}
@@ -218,7 +203,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               </p>
             )}
           </div>
-          <footer className="flex justify-end gap-3 mt-4 pt-2 border-t border-gray-100">
+          <footer className="flex justify-end gap-3 mt-8">
             {onCancel && (
               <button
                 type="button"
