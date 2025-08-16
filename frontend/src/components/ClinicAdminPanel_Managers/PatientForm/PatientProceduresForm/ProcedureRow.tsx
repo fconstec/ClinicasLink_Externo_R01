@@ -18,7 +18,7 @@ interface ProcedureRowProps {
 
 function normalizeImageUrl(img: ProcedureImage): string {
   if (img instanceof File) return URL.createObjectURL(img);
-  const raw = img.url?.trim() || "";
+  const raw = (img as any).url?.trim() || "";
   if (!raw) return "";
   if (/^https?:/i.test(raw)) return raw;
   if (raw.startsWith("/uploads/") || raw.startsWith("uploads/"))
@@ -90,7 +90,11 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
             type="button"
             className="text-red-600 flex items-center justify-center p-1"
             onClick={onRemove}
-            title="Remover"
+            title={
+              procedure.id > 0
+                ? "Excluir definitivamente"
+                : "Remover linha (não salva)"
+            }
             aria-label="Remover procedimento"
           >
             <Trash2 className="w-4 h-4" />
@@ -113,13 +117,13 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
       <div className="flex gap-1 mt-2 flex-wrap">
         {procedure.images.map((img, i) => {
           const url = normalizeImageUrl(img);
-          const name =
+            const name =
             img instanceof File
               ? img.name
-              : img.fileName || `Imagem #${img.id}`;
+              : (img as any).fileName || (img as any).filename || `Imagem #${(img as any).id}`;
           return (
             <div
-              key={img instanceof File ? name + i : img.id}
+              key={img instanceof File ? name + i : (img as any).id}
               className="relative flex flex-col items-center group cursor-pointer"
             >
               <img

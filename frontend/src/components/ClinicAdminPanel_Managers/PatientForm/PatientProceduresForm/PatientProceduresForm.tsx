@@ -19,6 +19,7 @@ interface PatientProceduresFormProps {
   procedures?: any[];
   onSave?: (newProcedures: any[]) => void;
   onCancel?: () => void;
+  closeOnSave?: boolean; // novo: se quiser comportamento antigo
 }
 
 const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
@@ -26,6 +27,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   procedures,
   onSave,
   onCancel,
+  closeOnSave = false,
 }) => {
   const { id: clinicId } = useParams<{ id: string }>();
 
@@ -44,6 +46,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     rowData,
     setRowData,
     submitting,
+    savingMessage,
     addProcedureRow,
     removeProcedure,
     handleRowChange,
@@ -116,8 +119,8 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
           submitAll({
             onSave: persisted => {
               onSave && onSave(persisted as any);
+              if (closeOnSave && onCancel) onCancel();
             },
-            onCancel,
           });
         }}
         className="relative flex w-full max-w-[470px] max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden"
@@ -138,9 +141,16 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
         <section className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto">
           <div>
-            <h2 className="text-[18px] font-bold text-[#e11d48] mb-3">
-              Procedimentos realizados
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[18px] font-bold text-[#e11d48]">
+                Procedimentos realizados
+              </h2>
+              {savingMessage && (
+                <span className="text-[10px] font-semibold text-green-600">
+                  {savingMessage}
+                </span>
+              )}
+            </div>
             <button
               type="button"
               className="bg-[#e11d48] hover:bg-[#f43f5e] text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow mb-5 disabled:opacity-60"
@@ -179,7 +189,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
                 onClick={onCancel}
                 disabled={submitting}
               >
-                Cancelar
+                Fechar
               </button>
             )}
             <button

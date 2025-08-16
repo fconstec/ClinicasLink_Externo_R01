@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import {
   ProcedureDraft,
   PersistedProcedure,
@@ -6,7 +6,8 @@ import {
 } from "../../../../types/procedureDraft";
 import {
   addPatientProcedure,
-  // updatePatientProcedure, // se quiser ativar update
+  // updatePatientProcedure,
+  deletePatientProcedure,
 } from "../../../../api/proceduresApi";
 
 export function toDraft(p: PersistedProcedure): ProcedureDraft {
@@ -22,7 +23,7 @@ export function toDraft(p: PersistedProcedure): ProcedureDraft {
 
 interface SubmitAllOptions {
   onSave?: (persisted: PersistedProcedure[]) => void;
-  onCancel?: () => void;
+  // Removemos onCancel automático para não fechar o modal ao salvar
 }
 
 export function useProcedureForm(
@@ -34,13 +35,14 @@ export function useProcedureForm(
     (initial || []).map(toDraft)
   );
   const [submitting, setSubmitting] = useState(false);
-  const [tempIdCounter, setTempIdCounter] = useState(-1);
+  const [savingMessage, setSavingMessage] = useState<string | null>(null);
+  const tempIdCounter = useRef(-1);
 
   const addProcedureRow = useCallback(() => {
     setRowData(prev => [
       ...prev,
       {
-        id: tempIdCounter,
+        id: tempIdCounter.current,
         date: "",
         description: "",
         professional: "",
@@ -48,12 +50,37 @@ export function useProcedureForm(
         images: [],
       },
     ]);
-    setTempIdCounter(c => c - 1);
-  }, [tempIdCounter]);
+    tempIdCounter.current -= 1;
+  }, []);
 
-  const removeProcedure = useCallback((index: number) => {
+  const removeProcedureLocal = useCallback((index: number) => {
     setRowData(prev => prev.filter((_, i) => i !== index));
   }, []);
+
+  const removeProcedure = useCallback(
+    async (index: number) => {
+      const proc = rowData[index];
+      if (!proc) return;
+      // Se ainda não foi salvo (id negativo), só remove local
+      if (proc.id <= 0) {
+        removeProcedureLocal(index);
+        return;
+      }
+      if (!clinicId) {
+        alert("clinicId não encontrado.");
+        return;
+      }
+      if (!confirm("Confirmar exclusão do procedimento?")) return;
+      try {
+        await deletePatientProcedure(proc.id, clinicId);
+        removeProcedureLocal(index);
+      } catch (err) {
+        console.error("[Procedures][delete] erro:", err);
+        alert("Erro ao excluir procedimento.");
+      }
+    },
+    [rowData, clinicId, removeProcedureLocal]
+  );
 
   const handleRowChange = useCallback(
     (index: number, update: Partial<ProcedureDraft>) => {
@@ -75,22 +102,23 @@ export function useProcedureForm(
   }
 
   const submitAll = useCallback(
-    async ({ onSave, onCancel }: SubmitAllOptions = {}) => {
+    async ({ onSave }: SubmitAllOptions = {}) => {
       if (!clinicId) {
         alert("clinicId não encontrado.");
         return;
       }
       setSubmitting(true);
+      setSavingMessage(null);
       try {
         const persisted: PersistedProcedure[] = [];
 
         for (const draft of rowData) {
           const payload = buildPayload(draft);
-          if (draft.id <= 0) {
+            if (draft.id <= 0) {
             const created = await addPatientProcedure(patientId, payload);
             persisted.push(created as any);
           } else {
-            // Se quiser atualizar:
+            // Se quiser ativar update no futuro:
             /*
             const updated = await updatePatientProcedure(draft.id, payload);
             persisted.push(updated as any);
@@ -110,7 +138,8 @@ export function useProcedureForm(
 
         setRowData(persisted.map(toDraft));
         onSave && onSave(persisted);
-        onCancel && onCancel();
+        setSavingMessage("Alterações salvas.");
+        setTimeout(() => setSavingMessage(null), 2500);
       } catch (err) {
         console.error("[Procedures][submitAll] erro geral:", err);
         alert("Erro ao salvar procedimentos.");
@@ -125,6 +154,7 @@ export function useProcedureForm(
     rowData,
     setRowData,
     submitting,
+    savingMessage,
     addProcedureRow,
     removeProcedure,
     handleRowChange,
