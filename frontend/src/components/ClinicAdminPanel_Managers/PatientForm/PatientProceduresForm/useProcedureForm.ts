@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ProcedureDraft,
   PersistedProcedure,
@@ -10,6 +10,9 @@ import {
   deletePatientProcedure,
 } from "../../../../api/proceduresApi";
 
+/**
+ * Converte um procedimento persistido em draft editável.
+ */
 export function toDraft(p: PersistedProcedure): ProcedureDraft {
   return {
     id: p.id,
@@ -26,74 +29,99 @@ interface SubmitAllOptions {
 }
 
 /**
- * Helper para contornar a regra no-restricted-globals (uso direto de confirm).
- * Facilita futura substituição por modal custom.
+ * Wrapper para confirmar sem quebrar ESLint (no-restricted-globals).
+ * Pode ser substituído futuramente por modal customizado.
  */
 function safeConfirm(message: string) {
   if (typeof window !== "undefined" && typeof window.confirm === "function") {
     return window.confirm(message);
   }
-  // Em ambiente sem window (SSR / testes) retorna true para não travar fluxo
   return true;
 }
 
 export function useProcedureForm(
   patientId: number,
   clinicId?: string,
-  initial?: PersistedProcedure[]
+  optionalInitial?: PersistedProcedure[]
 ) {
-  const [rowData, setRowData] = useState<ProcedureDraft[]>(
-    (initial || []).map(toDraft)
-  );
+  const initializedRef = useRef(false);
+  const [rowData, setRowData] = useState<ProcedureDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const tempIdCounter = useRef(-1);
+  const lastAddedIdRef = useRef<number | null>(null);
 
+  /**
+   * Inicializa apenas uma vez, mesmo que o componente pai re-renderize.
+   */
+  useEffect(() => {
+    if (!initializedRef.current && optionalInitial) {
+      setRowData(optionalInitial.map(toDraft));
+      initializedRef.current = true;
+    }
+  }, [optionalInitial]);
+
+  /**
+   * Adiciona uma linha temporária.
+   */
   const addProcedureRow = useCallback(() => {
-    setRowData(prev => [
-      ...prev,
-      {
+    setRowData(prev => {
+      const newDraft: ProcedureDraft = {
         id: tempIdCounter.current,
         date: "",
         description: "",
         professional: "",
         value: "",
         images: [],
-      },
-    ]);
-    tempIdCounter.current -= 1;
+      };
+      tempIdCounter.current -= 1;
+      lastAddedIdRef.current = newDraft.id;
+      return [...prev, newDraft];
+    });
   }, []);
 
-  const removeProcedureLocal = useCallback((index: number) => {
-    setRowData(prev => prev.filter((_, i) => i !== index));
+  /**
+   * Remove localmente sem chamar backend (uso interno).
+   */
+  const removeProcedureLocalById = useCallback((id: number) => {
+    setRowData(prev => prev.filter(p => p.id !== id));
   }, []);
 
-  const removeProcedure = useCallback(
-    async (index: number) => {
-      const proc = rowData[index];
+  /**
+   * Remove um procedimento (local ou remoto).
+   */
+  const removeProcedureById = useCallback(
+    async (id: number) => {
+      const proc = rowData.find(p => p.id === id);
       if (!proc) return;
+
+      // Não salvo ainda
       if (proc.id <= 0) {
-        // Ainda não persistido
-        removeProcedureLocal(index);
+        removeProcedureLocalById(proc.id);
         return;
       }
+
       if (!clinicId) {
-        // Evitar alerts no futuro: trocar por toast UI
         window.alert?.("clinicId não encontrado.");
         return;
       }
+
       if (!safeConfirm("Confirmar exclusão do procedimento?")) return;
+
       try {
         await deletePatientProcedure(proc.id, clinicId);
-        removeProcedureLocal(index);
+        removeProcedureLocalById(proc.id);
       } catch (err) {
         console.error("[Procedures][delete] erro:", err);
         window.alert?.("Erro ao excluir procedimento.");
       }
     },
-    [rowData, clinicId, removeProcedureLocal]
+    [rowData, clinicId, removeProcedureLocalById]
   );
 
+  /**
+   * Atualiza campos de uma linha por índice.
+   */
   const handleRowChange = useCallback(
     (index: number, update: Partial<ProcedureDraft>) => {
       setRowData(prev =>
@@ -103,6 +131,9 @@ export function useProcedureForm(
     []
   );
 
+  /**
+   * Monta payload para criação/atualização.
+   */
   function buildPayload(draft: ProcedureDraft) {
     return {
       date: draft.date || null,
@@ -113,6 +144,9 @@ export function useProcedureForm(
     };
   }
 
+  /**
+   * Salva todos (cria os novos; update está comentado por enquanto).
+   */
   const submitAll = useCallback(
     async ({ onSave }: SubmitAllOptions = {}) => {
       if (!clinicId) {
@@ -166,8 +200,9 @@ export function useProcedureForm(
     submitting,
     savingMessage,
     addProcedureRow,
-    removeProcedure,
+    removeProcedureById,
     handleRowChange,
     submitAll,
+    lastAddedIdRef,
   };
 }

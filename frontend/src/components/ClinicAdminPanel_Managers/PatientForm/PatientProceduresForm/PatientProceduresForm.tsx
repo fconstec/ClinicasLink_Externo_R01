@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import ProcedureRow from "./ProcedureRow";
 import ProcedureImageGalleryModal from "./ProcedureImageGalleryModal";
@@ -19,7 +19,7 @@ interface PatientProceduresFormProps {
   procedures?: any[];
   onSave?: (newProcedures: any[]) => void;
   onCancel?: () => void;
-  closeOnSave?: boolean; // novo: se quiser comportamento antigo
+  closeOnSave?: boolean; // se quiser fechar automaticamente ao salvar
 }
 
 const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
@@ -29,18 +29,27 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   onCancel,
   closeOnSave = false,
 }) => {
-  const { id: clinicId } = useParams<{ id: string }>();
+  // Captura clinicId da rota. Ajuste se sua rota usar outro nome (ex: clinicId).
+  const { id: clinicIdParam, clinicId: clinicIdAlt } = useParams<{
+    id?: string;
+    clinicId?: string;
+  }>();
+  const clinicId = clinicIdParam || clinicIdAlt;
 
-  const initialPersisted: PersistedProcedure[] = (procedures || []).map(
-    (p: any) => ({
+  /**
+   * Congela os procedimentos iniciais para não resetar ao re-render do pai.
+   */
+  const frozenInitialRef = useRef<PersistedProcedure[] | null>(null);
+  if (frozenInitialRef.current === null) {
+    frozenInitialRef.current = (procedures || []).map((p: any) => ({
       id: p.id,
       date: p.date,
       description: p.description,
       professional: p.professional,
       value: p.value,
       images: p.images,
-    })
-  );
+    }));
+  }
 
   const {
     rowData,
@@ -48,20 +57,40 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     submitting,
     savingMessage,
     addProcedureRow,
-    removeProcedure,
+    removeProcedureById,
     handleRowChange,
     submitAll,
-  } = useProcedureForm(patientId, clinicId, initialPersisted);
+    lastAddedIdRef,
+  } = useProcedureForm(patientId, clinicId, frozenInitialRef.current || undefined);
 
   const [modalImage, setModalImage] = useState<{
     images: ProcedureImage[];
     idx: number;
   } | null>(null);
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Scroll suave até a última linha adicionada.
+   */
+  useEffect(() => {
+    if (!lastAddedIdRef.current) return;
+    const id = lastAddedIdRef.current;
+    const el = containerRef.current?.querySelector(
+      `[data-proc-row-id="${id}"]`
+    ) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [rowData, lastAddedIdRef]);
+
   async function handleUploadImage(procedureId: number, file: File) {
-    if (!clinicId) return;
+    if (!clinicId) {
+      window.alert?.("clinicId não encontrado.");
+      return;
+    }
     if (procedureId <= 0) {
-      alert("Salve o procedimento antes de adicionar imagens.");
+      window.alert?.("Salve o procedimento antes de adicionar imagens.");
       return;
     }
     try {
@@ -84,7 +113,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
       );
     } catch (err) {
       console.error("[Procedures][uploadImage] erro:", err);
-      alert("Erro ao enviar imagem.");
+      window.alert?.("Erro ao enviar imagem.");
     }
   }
 
@@ -92,13 +121,16 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     procedureId: number,
     image: ProcedureImage
   ) {
-    if (!clinicId) return;
+    if (!clinicId) {
+      window.alert?.("clinicId não encontrado.");
+      return;
+    }
     if (!(image instanceof File)) {
       try {
         await deleteProcedureImage(procedureId, image.id, clinicId);
       } catch (err) {
         console.error("[Procedures][deleteImage] erro:", err);
-        alert("Erro ao remover imagem.");
+        window.alert?.("Erro ao remover imagem.");
         return;
       }
     }
@@ -139,7 +171,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
           </button>
         )}
 
-        <section className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto">
+        <section
+          ref={containerRef}
+          className="flex-1 px-6 py-4 flex flex-col bg-white justify-between overflow-y-auto"
+        >
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-[18px] font-bold text-[#e11d48]">
@@ -160,13 +195,15 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               + Adicionar procedimento
             </button>
             {rowData.length > 0 ? (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-4 pb-4">
                 {rowData.map((proc, idx) => (
                   <ProcedureRow
-                    key={proc.id}
+                    key={`${proc.id}_${idx}`}
+                    data-row-index={idx}
+                    data-proc-row-id={proc.id}
                     procedure={proc}
                     onChange={update => handleRowChange(idx, update)}
-                    onRemove={() => removeProcedure(idx)}
+                    onRemove={() => removeProcedureById(proc.id)}
                     onAddImage={file => handleUploadImage(proc.id, file)}
                     onRemoveImage={img => handleDeleteImage(proc.id, img)}
                     onViewImage={imgIdx =>
@@ -181,7 +218,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               </p>
             )}
           </div>
-          <footer className="flex justify-end gap-3 mt-8">
+          <footer className="flex justify-end gap-3 mt-4 pt-2 border-t border-gray-100">
             {onCancel && (
               <button
                 type="button"

@@ -7,7 +7,13 @@ import {
   StoredProcedureImage,
 } from "../../../../types/procedureDraft";
 
-interface ProcedureRowProps {
+/**
+ * Props do componente.
+ * Usamos Omit para remover o onChange nativo de HTMLAttributes (que espera um FormEvent),
+ * evitando conflito com nossa prop onChange semântica (atualiza o draft).
+ */
+interface ProcedureRowProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
   procedure: ProcedureDraft;
   onChange: (update: Partial<ProcedureDraft>) => void;
   onRemove: () => void;
@@ -16,23 +22,29 @@ interface ProcedureRowProps {
   onViewImage: (imgIdx: number) => void;
 }
 
+/**
+ * Normaliza a URL da imagem (File -> objectURL, relativa -> fileUrl, absoluta mantida).
+ */
 function normalizeImageUrl(img: ProcedureImage): string {
   if (img instanceof File) return URL.createObjectURL(img);
   const raw = (img as any).url?.trim() || "";
   if (!raw) return "";
   if (/^https?:/i.test(raw)) return raw;
-  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/"))
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
     return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
+  }
   return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
-const ProcedureRow: React.FC<ProcedureRowProps> = ({
+const ProcedureRowComponent: React.FC<ProcedureRowProps> = ({
   procedure,
   onChange,
   onRemove,
   onAddImage,
   onRemoveImage,
   onViewImage,
+  className = "",
+  ...divProps
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -52,7 +64,13 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
   const disabledImage = procedure.id <= 0;
 
   return (
-    <div className="w-full border border-[#e5e8ee] rounded-xl p-3 bg-gray-50">
+    <div
+      className={
+        "w-full border border-[#e5e8ee] rounded-xl p-3 bg-gray-50 " + className
+      }
+      data-proc-row-id={procedure.id}
+      {...divProps}
+    >
       <div className="grid grid-cols-[100px_120px_70px_40px] gap-2 items-center w-full mb-1">
         <div>
           <input
@@ -117,13 +135,19 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
       <div className="flex gap-1 mt-2 flex-wrap">
         {procedure.images.map((img, i) => {
           const url = normalizeImageUrl(img);
-            const name =
+          const name =
             img instanceof File
               ? img.name
-              : (img as any).fileName || (img as any).filename || `Imagem #${(img as any).id}`;
+              : (img as any).fileName ||
+                (img as any).filename ||
+                `Imagem #${(img as any).id}`;
           return (
             <div
-              key={img instanceof File ? name + i : (img as any).id}
+              key={
+                img instanceof File
+                  ? `file-${name}-${i}`
+                  : `persisted-${(img as any).id}-${i}`
+              }
               className="relative flex flex-col items-center group cursor-pointer"
             >
               <img
@@ -136,7 +160,7 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
                 type="button"
                 className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-gray-400 opacity-0 group-hover:opacity-100 hover:text-[#e11d48] shadow p-0.5 transition"
                 onClick={() => onRemoveImage(img)}
-                aria-label="Remover"
+                aria-label="Remover imagem"
               >
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -181,4 +205,4 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
   );
 };
 
-export default ProcedureRow;
+export default React.memo(ProcedureRowComponent);
