@@ -1,5 +1,3 @@
-// SOMENTE diffs relevantes ao modal de procedimentos: adicionamos logs de debug
-// Substitua seu arquivo inteiro por este se quiser manter exatamente igual ao patch anterior + logs.
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { Plus, Search, Edit, Trash2, BookOpenCheck, ActivitySquare, Eye } from 'lucide-react';
@@ -14,8 +12,6 @@ import {
   updatePatientAnamnesisTcle,
 } from '@/api/patientsApi';
 import { fileUrl } from '@/api/apiBase';
-
-const DBG_PREFIX_PM = "[PatientsManager][debug]";
 
 function getClinicId(): string {
   const id = localStorage.getItem('clinic_id');
@@ -160,11 +156,6 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       setShowProceduresModal(prev =>
         prev ? { ...prev, procedures: updatedProcedures } : prev
       );
-      // eslint-disable-next-line no-console
-      console.log(DBG_PREFIX_PM, "handleSaveProcedures -> reloaded procedures", {
-        patientId,
-        count: updatedProcedures.length,
-      });
     } catch {
       alert('Erro ao salvar procedimentos do paciente.');
     }
@@ -177,41 +168,18 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       return;
     }
     const clinicId = getClinicId();
-    let targetPatient = patient;
-    if (!patient.procedures) {
-      try {
-        setLoadingProceduresModal(true);
-        // eslint-disable-next-line no-console
-        console.log(DBG_PREFIX_PM, "Carregando procedures para paciente", patient.id);
-        const procs = await fetchPatientProcedures(patient.id, clinicId);
-        setPatients(prev =>
-          prev.map(p => (p.id === patient.id ? { ...p, procedures: procs } : p))
-        );
-        targetPatient = { ...patient, procedures: procs };
-        // eslint-disable-next-line no-console
-        console.log(DBG_PREFIX_PM, "Procedures carregados", {
-          patientId: patient.id,
-          count: procs.length,
-        });
-      } catch {
-        alert('Erro ao carregar procedimentos do paciente.');
-        return;
-      } finally {
-        setLoadingProceduresModal(false);
-      }
-    } else {
-      // eslint-disable-next-line no-console
-      console.log(DBG_PREFIX_PM, "Procedures já existiam no objeto do paciente", {
-        patientId: patient.id,
-        count: patient.procedures.length,
-      });
+    try {
+      setLoadingProceduresModal(true);
+      const procs = await fetchPatientProcedures(patient.id, clinicId);
+      setPatients(prev =>
+        prev.map(p => (p.id === patient.id ? { ...p, procedures: procs } : p))
+      );
+      setShowProceduresModal({ ...patient, procedures: procs });
+    } catch {
+      alert('Erro ao carregar procedimentos do paciente.');
+    } finally {
+      setLoadingProceduresModal(false);
     }
-    setShowProceduresModal(targetPatient);
-    // eslint-disable-next-line no-console
-    console.log(DBG_PREFIX_PM, "Abrindo modal procedimentos", {
-      patientId: targetPatient.id,
-      count: targetPatient.procedures ? targetPatient.procedures.length : 0,
-    });
   };
 
   const addButtonClasses =
@@ -243,23 +211,19 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
 
       {showProceduresModal && (
         <PatientProceduresForm
+          clinicId={getClinicId()}
           patientId={showProceduresModal.id}
           procedures={showProceduresModal.procedures}
           onSave={handleSaveProcedures}
-          onCancel={() => {
-            // eslint-disable-next-line no-console
-            console.log(DBG_PREFIX_PM, "Fechando modal procedimentos");
-            setShowProceduresModal(null);
-          }}
+          onCancel={() => setShowProceduresModal(null)}
           closeOnSave={false}
-          debug={true}
         />
       )}
 
       <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-8 gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Pacientes</h2>
         <div className="flex flex-col md:flex-row gap-3 items-center">
-          <div className="relative w-full md:w-72">
+          <div className="relative w/full md:w-72">
             <input
               type="text"
               placeholder="Buscar paciente..."

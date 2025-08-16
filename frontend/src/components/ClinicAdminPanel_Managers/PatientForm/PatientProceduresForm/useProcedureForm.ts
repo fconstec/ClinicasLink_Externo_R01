@@ -6,13 +6,9 @@ import {
 } from "../../../../types/procedureDraft";
 import {
   addPatientProcedure,
-  // updatePatientProcedure,
   deletePatientProcedure,
 } from "../../../../api/proceduresApi";
 
-/**
- * Converte um procedimento persistido em draft editável.
- */
 export function toDraft(p: PersistedProcedure): ProcedureDraft {
   return {
     id: p.id,
@@ -28,9 +24,6 @@ interface SubmitAllOptions {
   onSave?: (persisted: PersistedProcedure[]) => void;
 }
 
-/**
- * Wrapper para confirmar sem quebrar ESLint (no-restricted-globals).
- */
 function safeConfirm(message: string) {
   if (typeof window !== "undefined" && typeof window.confirm === "function") {
     return window.confirm(message);
@@ -38,13 +31,6 @@ function safeConfirm(message: string) {
   return true;
 }
 
-/**
- * Hook principal de gerenciamento de procedimentos.
- * - Inicializa só uma vez com optionalInitial.
- * - Permite adicionar temporários (id negativo).
- * - Salva (cria) todos os temporários.
- * - Delete por ID.
- */
 export function useProcedureForm(
   patientId: number,
   clinicId?: string,
@@ -57,7 +43,6 @@ export function useProcedureForm(
   const tempIdCounter = useRef(-1);
   const lastAddedIdRef = useRef<number | null>(null);
 
-  // Inicializa somente uma vez
   useEffect(() => {
     if (!initializedRef.current && optionalInitial) {
       setRowData(optionalInitial.map(toDraft));
@@ -89,8 +74,6 @@ export function useProcedureForm(
     async (id: number) => {
       const proc = rowData.find(p => p.id === id);
       if (!proc) return;
-
-      // Ainda não persistido
       if (proc.id <= 0) {
         removeProcedureLocalById(proc.id);
         return;
@@ -100,7 +83,6 @@ export function useProcedureForm(
         return;
       }
       if (!safeConfirm("Confirmar exclusão do procedimento?")) return;
-
       try {
         await deletePatientProcedure(proc.id, clinicId);
         removeProcedureLocalById(proc.id);
@@ -139,17 +121,14 @@ export function useProcedureForm(
       }
       setSubmitting(true);
       setSavingMessage(null);
-
       try {
         const persisted: PersistedProcedure[] = [];
-
         for (const draft of rowData) {
           const payload = buildPayload(draft);
           if (draft.id <= 0) {
             const created = await addPatientProcedure(patientId, payload);
             persisted.push(created as any);
           } else {
-            // Futuramente: updatePatientProcedure(draft.id, payload)
             persisted.push({
               id: draft.id,
               date: draft.date,
@@ -162,7 +141,6 @@ export function useProcedureForm(
             });
           }
         }
-
         setRowData(persisted.map(toDraft));
         onSave && onSave(persisted);
         setSavingMessage("Alterações salvas.");
