@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { X, Trash2 } from "lucide-react";
-import { apiUrl, fileUrl } from "../../../api/apiBase"; // <<< uso centralizado da base
+import { apiUrl } from "../../../api/apiBase";
+import { resolveImageUrl } from "@/utils/resolveImage";
 
 export interface PatientMainData {
   name: string;
@@ -21,26 +22,6 @@ const initialState: PatientMainData = {
   photo: undefined,
 };
 
-/**
- * Converte o valor salvo (nome, caminho relativo ou URL absoluta) para URL de exibição.
- * Regras:
- * - URL http/https -> retorna como está (fileUrl já preservaria, mas mantemos claro)
- * - /uploads/...   -> prefixa domínio (fileUrl)
- * - uploads/...    -> garante barra inicial
- * - nome simples   -> assume pasta /uploads/
- */
-function getPhotoDisplayUrl(raw?: string | null): string | null {
-  if (!raw) return null;
-  const v = raw.trim();
-  if (!v) return null;
-  if (/^https?:\/\//i.test(v) || /^data:/i.test(v)) return v;
-
-  if (v.startsWith("/uploads/")) return fileUrl(v);              // já começa com /uploads
-  if (v.startsWith("uploads/")) return fileUrl("/" + v);         // adiciona barra
-  if (v.startsWith("/")) return fileUrl(v);                      // qualquer path absoluto
-  return fileUrl("/uploads/" + v);                               // nome simples
-}
-
 const PatientMainDataForm: React.FC<{
   patient?: Partial<PatientMainData>;
   onSave: (data: PatientMainData) => void;
@@ -58,11 +39,13 @@ const PatientMainDataForm: React.FC<{
 
   // Atualiza form e preview quando paciente muda
   useEffect(() => {
-    setForm({
+    const merged: PatientMainData = {
       ...initialState,
       ...patient,
-    });
-    setFacePreview(getPhotoDisplayUrl(patient?.photo ?? null));
+    };
+    setForm(merged);
+    const preview = resolveImageUrl(merged.photo || null);
+    setFacePreview(preview || null);
   }, [patient]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -86,13 +69,28 @@ const PatientMainDataForm: React.FC<{
 
       if (!resp.ok) throw new Error(`Falha no upload: ${resp.status}`);
       const data = await resp.json();
-      // Supondo que backend retorna { url: "/uploads/..." } ou nome de arquivo
-      const storedValue = data.url || data.photoUrl || data.photo || "";
+
+      // Considerar mais chaves possíveis
+      const storedValue =
+        data.url ||
+        data.fileUrl ||
+        data.photoUrl ||
+        data.photo ||
+        data.path ||
+        data.filePath ||
+        data.filename ||
+        data.fileName ||
+        "";
+
+      if (!storedValue) {
+        console.warn("[PatientMainDataForm] Upload retornou sem campo reconhecido:", data);
+      }
+
       setForm((prev) => ({
         ...prev,
-        photo: storedValue,
+        photo: storedValue || prev.photo, // mantém anterior se nada veio
       }));
-      setFacePreview(getPhotoDisplayUrl(storedValue));
+      setFacePreview(resolveImageUrl(storedValue) || facePreview);
     } catch (err) {
       console.error("Erro ao fazer upload da foto do paciente:", err);
       alert("Erro ao fazer upload da foto.");
@@ -121,7 +119,7 @@ const PatientMainDataForm: React.FC<{
     setError(null);
     const payload: PatientMainData = {
       ...form,
-      photo: form.photo && form.photo.trim() ? form.photo : undefined,
+      photo: form.photo && form.photo.toString().trim() ? form.photo : undefined,
     };
     const msg = validateForm(payload);
     if (msg) {
@@ -248,35 +246,35 @@ const PatientMainDataForm: React.FC<{
               placeholder="Nome completo"
             />
           </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="block text-xs text-[#344055] font-medium mb-1">
-                  Data de Nascimento
-                </label>
-                <input
-                  type="date"
-                  name="birthDate"
-                  value={form.birthDate}
-                  onChange={handleChange}
-                  className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
-                  max={new Date().toISOString().slice(0, 10)}
-                  required
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs text-[#344055] font-medium mb-1">
-                  Telefone
-                </label>
-                <input
-                  name="phone"
-                  value={form.phone}
-                  onChange={handleChange}
-                  className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
-                  placeholder="Telefone"
-                  required
-                />
-              </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs text-[#344055] font-medium mb-1">
+                Data de Nascimento
+              </label>
+              <input
+                type="date"
+                name="birthDate"
+                value={form.birthDate}
+                onChange={handleChange}
+                className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
+                max={new Date().toISOString().slice(0, 10)}
+                required
+              />
             </div>
+            <div className="flex-1">
+              <label className="block text-xs text-[#344055] font-medium mb-1">
+                Telefone
+              </label>
+              <input
+                name="phone"
+                value={form.phone}
+                onChange={handleChange}
+                className="border border-[#e5e8ee] rounded-xl px-3 py-1 text-sm w-full"
+                placeholder="Telefone"
+                required
+              />
+            </div>
+          </div>
           <div>
             <label className="block text-xs text-[#344055] font-medium mb-1">
               E-mail

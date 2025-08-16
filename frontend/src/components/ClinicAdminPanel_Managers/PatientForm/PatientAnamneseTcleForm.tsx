@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "../../ui/button";
 import { X, Edit, Send } from "lucide-react";
-import { API_BASE_URL, fileUrl } from "../../../api/apiBase";
+import { API_BASE_URL } from "../../../api/apiBase";
+import { resolveImageUrl } from "@/utils/resolveImage";
 
 interface AnamneseTcleFormProps {
   patientId: number;
@@ -31,28 +32,8 @@ const DEFAULT_TCLE = `Declaro que fui informado(a) sobre o atendimento clínico 
 
 const API_URL = (API_BASE_URL || "").replace(/\/+$/, "");
 
-// Helpers
 function getClinicId(): string | null {
   return localStorage.getItem("clinic_id");
-}
-
-function normalizePhotoUrl(photo?: string | null): string | undefined {
-  if (!photo) return undefined;
-  const v = photo.trim();
-  if (!v) return undefined;
-  if (/^https?:\/\//i.test(v)) {
-    try {
-      const u = new URL(v);
-      if (u.host.includes("localhost")) return fileUrl(u.pathname + u.search);
-      return v;
-    } catch {
-      return v;
-    }
-  }
-  if (v.startsWith("/uploads/")) return fileUrl(v);
-  if (v.startsWith("uploads/")) return fileUrl("/" + v);
-  if (v.startsWith("/")) return fileUrl(v);
-  return fileUrl("/uploads/" + v);
 }
 
 const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
@@ -87,7 +68,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  const normalizedPhotoUrl = normalizePhotoUrl(patientPhotoUrl);
+  const normalizedPhotoUrl = resolveImageUrl(patientPhotoUrl);
 
   // Carrega anamnese existente
   useEffect(() => {
@@ -100,7 +81,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         const res = await fetch(url);
         if (!res.ok) {
           const txt = await res.text();
-          console.warn("[ANAMNESE][LOAD] status:", res.status, "body:", txt);
+            console.warn("[ANAMNESE][LOAD] status:", res.status, "body:", txt);
           return;
         }
         const data = await res.json();
@@ -200,7 +181,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
       payload.tcle_nome = fullName.trim();
       payload.tcle_data_hora = now;
     } else {
-      // Importante: usar null em vez de "" para evitar erro 22007 no backend
+      // Importante: usar null em vez de "" para evitar erro de data no backend
       payload.tcle_nome = null;
       payload.tcle_data_hora = null;
     }
@@ -230,8 +211,7 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
         return;
       }
 
-      const data = await res.text();
-      console.log("[ANAMNESE][SAVE] sucesso, resposta:", data);
+      await res.text();
       alert("Anamnese salva com sucesso!");
       onSave && (await onSave(payload));
       onCancel && onCancel();
@@ -519,7 +499,13 @@ const PatientAnamneseTcleForm: React.FC<AnamneseTcleFormProps> = ({
               </button>
               <h4 className="font-bold text-[#e11d48] mb-2">Compartilhar com Paciente</h4>
               <p className="text-xs text-gray-700 break-all mb-4">
-                Link: <a href={generateShareLink()} className="underline text-[#e11d48]">{generateShareLink()}</a>
+                Link:{" "}
+                <a
+                  href={generateShareLink()}
+                  className="underline text-[#e11d48]"
+                >
+                  {generateShareLink()}
+                </a>
               </p>
               <div className="flex gap-2">
                 <Button
