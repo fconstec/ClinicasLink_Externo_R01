@@ -2,8 +2,7 @@ import { Request, Response } from "express";
 import { supabase } from "../supabaseClient";
 
 /**
- * Util para mapear imagem (snake_case → camelCase sem quebrar front).
- * Aceita múltiplas variações defensivamente.
+ * Normaliza objeto de imagem para sempre incluir fileName consumido pelo front.
  */
 function mapImage(row: any) {
   if (!row || typeof row !== "object") return row;
@@ -12,12 +11,11 @@ function mapImage(row: any) {
     fileName: row.fileName ?? row.file_name ?? row.filename ?? null,
   };
 }
-
 function mapImages(arr: any[] | null | undefined) {
   return (arr || []).map(mapImage);
 }
 
-// Criar procedimento (JSON puro, campos corretamente mapeados)
+// Criar procedimento
 export async function createProcedure(req: Request, res: Response) {
   try {
     const patient_id = Number(req.params.id);
@@ -38,7 +36,7 @@ export async function createProcedure(req: Request, res: Response) {
       .select("*");
 
     if (error) throw error;
-    const created = createdArr && createdArr.length > 0 ? createdArr[0] : null;
+    const created = createdArr?.[0] || null;
 
     res.status(201).json({ ...created, images: [] });
   } catch (err) {
@@ -47,7 +45,7 @@ export async function createProcedure(req: Request, res: Response) {
   }
 }
 
-// Atualizar procedimento (JSON puro, campos corretamente mapeados)
+// Atualizar procedimento
 export async function updateProcedure(req: Request, res: Response) {
   try {
     const procedure_id = req.params.procedure_id;
@@ -60,10 +58,7 @@ export async function updateProcedure(req: Request, res: Response) {
       date: date ?? null,
       updated_at: new Date().toISOString(),
     };
-
     if (clinicId) updateData.clinic_id = Number(clinicId);
-
-    console.log("Update procedure_id:", procedure_id, "Body:", req.body);
 
     const { data: updatedArr, error } = await supabase
       .from("patient_procedures")
@@ -72,11 +67,7 @@ export async function updateProcedure(req: Request, res: Response) {
       .select("*");
 
     if (error) throw error;
-
-    const updated = updatedArr && updatedArr.length > 0 ? updatedArr[0] : null;
-
-    console.log("Updated procedure:", updated);
-
+    const updated = updatedArr?.[0] || null;
     if (!updated) {
       return res.status(404).json({ message: "Procedimento não encontrado" });
     }
@@ -116,20 +107,19 @@ export async function listProcedures(req: Request, res: Response) {
         return { ...proc, images: mapImages(images) };
       })
     );
+
     res.json(proceduresWithImages);
   } catch (err) {
     console.error("Erro ao buscar procedimentos:", err);
-    res
-      .status(500)
-      .json({ message: "Erro ao buscar procedimentos", error: err });
+    res.status(500).json({ message: "Erro ao buscar procedimentos", error: err });
   }
 }
 
-// Deletar procedimento (remove também imagens associadas)
+// Deletar procedimento
 export async function deleteProcedure(req: Request, res: Response) {
   try {
     const procedure_id = req.params.procedure_id;
-    // Apaga imagens associadas
+
     const { error: delImgsError } = await supabase
       .from("procedure_images")
       .delete()
@@ -153,7 +143,7 @@ export async function deleteProcedure(req: Request, res: Response) {
   }
 }
 
-// Upload de imagem individual para procedimento
+// Upload de imagem individual
 export async function uploadProcedureImage(req: Request, res: Response) {
   try {
     const { procedureId } = req.params;
@@ -161,44 +151,37 @@ export async function uploadProcedureImage(req: Request, res: Response) {
       return res.status(400).json({ error: "Nenhum arquivo enviado." });
     }
 
-    // Nome físico da coluna ajustado para snake_case (file_name).
-    // Se sua coluna for 'filename' em vez de 'file_name', troque abaixo apenas essa chave.
     const fileUrl = `/uploads/${req.file.filename}`;
-    const insertRecord: any = {
-      procedure_id: Number(procedureId),
-      url: fileUrl,
-      file_name: req.file.originalname, // <--- ajuste principal
-    };
 
+    // Inserimos usando 'filename' (nome real da coluna no banco).
     const { data: imgArr, error } = await supabase
       .from("procedure_images")
-      .insert([insertRecord])
+      .insert([
+        {
+          procedure_id: Number(procedureId),
+            url: fileUrl,
+          filename: req.file.originalname, // Coluna existente
+        },
+      ])
       .select("*");
 
     if (error) throw error;
+    const img = imgArr?.[0] ? mapImage(imgArr[0]) : null;
 
-    const img = imgArr && imgArr.length > 0 ? mapImage(imgArr[0]) : null;
-
-    // Retornar lista atualizada de imagens
     const { data: images, error: imgError } = await supabase
       .from("procedure_images")
       .select("*")
       .eq("procedure_id", Number(procedureId));
     if (imgError) throw imgError;
 
-    res
-      .status(201)
-      .json({ uploaded: img, images: mapImages(images) });
+    res.status(201).json({ uploaded: img, images: mapImages(images) });
   } catch (err) {
     console.error("Erro ao salvar imagem do procedimento:", err);
-    res.status(500).json({
-      message: "Erro ao salvar imagem do procedimento",
-      error: err,
-    });
+    res.status(500).json({ message: "Erro ao salvar imagem do procedimento", error: err });
   }
 }
 
-// Deletar imagem de procedimento
+// Deletar imagem
 export async function deleteProcedureImage(req: Request, res: Response) {
   try {
     const { imageId } = req.params;
