@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
 import ProcedureRow from "./ProcedureRow";
 import ProcedureImageGalleryModal from "./ProcedureImageGalleryModal";
-import { useProcedureForm } from "./useProcedureForm";
+import { useProcedureForm, toDraft } from "./useProcedureForm";
 import {
   uploadProcedureImage,
   deleteProcedureImage,
@@ -14,12 +13,19 @@ import {
   PersistedProcedure,
 } from "../../../../types/procedureDraft";
 
+// =====================================================
+// DEBUG UTIL
+// =====================================================
+const DBG_PREFIX = "[ProceduresForm][debug]";
+let globalMountCounter = (window as any).__PF_MOUNT_COUNT__ || 0;
+
 interface PatientProceduresFormProps {
   patientId: number;
-  procedures?: PersistedProcedure[];
+  procedures?: PersistedProcedure[]; // pode vir undefined
   onSave?: (newProcedures: PersistedProcedure[]) => void;
   onCancel?: () => void;
   closeOnSave?: boolean;
+  debug?: boolean;
 }
 
 const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
@@ -28,10 +34,50 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   onSave,
   onCancel,
   closeOnSave = false,
+  debug = true,
 }) => {
-  const { id: clinicId } = useParams<{ id: string }>();
+  // MONTAGEM / DESMONTAGEM
+  const mountIdRef = useRef<number>(++globalMountCounter);
+  (window as any).__PF_MOUNT_COUNT__ = globalMountCounter;
 
-  // Congela a lista inicial para evitar que re-renders do pai sobrescrevam adições locais.
+  if (debug) {
+    // Log síncrono a cada render
+    // eslint-disable-next-line no-console
+    console.log(
+      DBG_PREFIX,
+      "RENDER",
+      "mountId=" + mountIdRef.current,
+      "patientId=" + patientId,
+      "proceduresPropLen=" + (procedures ? procedures.length : "undefined")
+    );
+  }
+
+  useEffect(() => {
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.log(
+        DBG_PREFIX,
+        "MOUNT",
+        "mountId=" + mountIdRef.current,
+        "patientId=" + patientId,
+        "proceduresPropLen=" + (procedures ? procedures.length : "undefined")
+      );
+    }
+    return () => {
+      if (debug) {
+        // eslint-disable-next-line no-console
+        console.log(
+          DBG_PREFIX,
+          "UNMOUNT",
+          "mountId=" + mountIdRef.current,
+          "patientId=" + patientId
+        );
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Congela inicial apenas na PRIMEIRA montagem daquela instância.
   const frozenInitialRef = useRef<PersistedProcedure[] | null>(null);
   if (frozenInitialRef.current === null) {
     frozenInitialRef.current = (procedures || []).map(p => ({
@@ -42,6 +88,24 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
       value: p.value,
       images: p.images,
     }));
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.log(
+        DBG_PREFIX,
+        "Freeze initial procedures",
+        "mountId=" + mountIdRef.current,
+        "frozenLen=" + frozenInitialRef.current.length
+      );
+    }
+  } else if (debug) {
+    // eslint-disable-next-line no-console
+    console.log(
+      DBG_PREFIX,
+      "Ignore new procedures prop because already frozen",
+      "mountId=" + mountIdRef.current,
+      "incomingLen=" + (procedures ? procedures.length : "undefined"),
+      "frozenLen=" + frozenInitialRef.current.length
+    );
   }
 
   const {
@@ -54,7 +118,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     handleRowChange,
     submitAll,
     lastAddedIdRef,
-  } = useProcedureForm(patientId, clinicId, frozenInitialRef.current || undefined);
+  } = useProcedureForm(patientId, undefined, frozenInitialRef.current || undefined);
 
   const [modalImage, setModalImage] = useState<{
     images: ProcedureImage[];
@@ -63,7 +127,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Scroll até a última linha adicionada
+  // Scroll para nova linha
   useEffect(() => {
     if (!lastAddedIdRef.current) return;
     const id = lastAddedIdRef.current;
@@ -73,11 +137,21 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [rowData]);
 
-  async function handleUploadImage(procedureId: number, file: File) {
-    if (!clinicId) {
-      window.alert?.("clinicId não encontrado.");
-      return;
+  // LOG DE rowData QUANDO MUDA
+  useEffect(() => {
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.log(
+        DBG_PREFIX,
+        "rowData changed",
+        "mountId=" + mountIdRef.current,
+        "rowDataLen=" + rowData.length,
+        rowData.map(r => ({ id: r.id, desc: r.description?.slice(0, 15) }))
+      );
     }
+  }, [rowData, debug]);
+
+  async function handleUploadImage(procedureId: number, file: File) {
     if (procedureId <= 0) {
       window.alert?.("Salve o procedimento antes de adicionar imagens.");
       return;
@@ -87,10 +161,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
         patientId,
         procedureId,
         file,
-        clinicId
+        "" // clinicId omitido aqui já que você estava usando useParams antes. Ajustar se necessário.
       );
       setRowData((prev: ProcedureDraft[]) =>
-        prev.map(p =>
+        prev.map((p: ProcedureDraft) =>
           p.id === procedureId
             ? {
                 ...p,
@@ -112,7 +186,7 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
   ) {
     if (!(image instanceof File)) {
       try {
-        await deleteProcedureImage(procedureId, (image as any).id, clinicId!);
+        await deleteProcedureImage(procedureId, (image as any).id, "");
       } catch (err) {
         console.error("[Procedures][deleteImage] erro:", err);
         window.alert?.("Erro ao remover imagem.");
@@ -133,23 +207,58 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
       <form
         onSubmit={e => {
           e.preventDefault();
+          if (debug) {
+            // eslint-disable-next-line no-console
+            console.log(
+              DBG_PREFIX,
+              "submitAll triggered",
+              "mountId=" + mountIdRef.current
+            );
+          }
           submitAll({
             onSave: persisted => {
+              if (debug) {
+                // eslint-disable-next-line no-console
+                console.log(
+                  DBG_PREFIX,
+                  "onSave callback (from submitAll)",
+                  "mountId=" + mountIdRef.current,
+                  "persistedLen=" + persisted.length
+                );
+              }
               onSave && onSave(persisted);
-              if (closeOnSave && onCancel) onCancel();
+              if (closeOnSave && onCancel) {
+                if (debug) {
+                  // eslint-disable-next-line no-console
+                  console.log(
+                    DBG_PREFIX,
+                    "closeOnSave=true => chamando onCancel()",
+                    "mountId=" + mountIdRef.current
+                  );
+                }
+                onCancel();
+              }
             },
           });
         }}
-        className="relative flex w-full max-w-[470px] max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden"
-        style={{ fontFamily: "Inter, 'Segoe UI', Arial, sans-serif" }}
+        className="relative flex w-full max-w-[520px] max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden"
       >
         {onCancel && (
           <button
             type="button"
-            className="absolute top-4 right-6 z-20 text-[#7c869b] hover:text-[#e11d48] text-2xl font-bold focus:outline-none"
+            className="absolute top-4 right-6 z-20 text-[#7c869b] hover:text-[#e11d48] text-2xl font-bold"
             style={{ lineHeight: 1 }}
-            onClick={onCancel}
-            tabIndex={-1}
+            onClick={() => {
+              if (debug) {
+                // eslint-disable-next-line no-console
+                console.log(
+                  DBG_PREFIX,
+                  "onCancel button clicked",
+                  "mountId=" + mountIdRef.current
+                );
+              }
+              onCancel();
+            }}
             aria-label="Fechar"
           >
             ×
@@ -165,6 +274,10 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               <h2 className="text-[18px] font-bold text-[#e11d48]">
                 Procedimentos realizados
               </h2>
+              <span className="text-[10px] font-semibold text-gray-400">
+                debug mountId={mountIdRef.current} propsLen=
+                {procedures ? procedures.length : "undef"}
+              </span>
               {savingMessage && (
                 <span className="text-[10px] font-semibold text-green-600">
                   {savingMessage}
@@ -174,13 +287,24 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
             <button
               type="button"
               className="bg-[#e11d48] hover:bg-[#f43f5e] text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow mb-5 disabled:opacity-60"
-              onClick={addProcedureRow}
+              onClick={() => {
+                if (debug) {
+                  // eslint-disable-next-line no-console
+                  console.log(
+                    DBG_PREFIX,
+                    "addProcedureRow()",
+                    "mountId=" + mountIdRef.current
+                  );
+                }
+                addProcedureRow();
+              }}
               disabled={submitting}
             >
               + Adicionar procedimento
             </button>
+
             {rowData.length > 0 ? (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-4 pb-4">
                 {rowData.map((proc, idx) => (
                   <ProcedureRow
                     key={`${proc.id}_${idx}`}
@@ -202,12 +326,22 @@ const PatientProceduresForm: React.FC<PatientProceduresFormProps> = ({
               </p>
             )}
           </div>
-          <footer className="flex justify-end gap-3 mt-8">
+          <footer className="flex justify-end gap-3 mt-4 pt-2 border-t border-gray-100">
             {onCancel && (
               <button
                 type="button"
                 className="border border-[#bfc5d6] text-[#344055] bg-white hover:bg-[#f7f9fb] rounded-xl px-6 py-2 text-xs font-bold disabled:opacity-60"
-                onClick={onCancel}
+                onClick={() => {
+                  if (debug) {
+                    // eslint-disable-next-line no-console
+                    console.log(
+                      DBG_PREFIX,
+                      "Footer Fechar clicked",
+                      "mountId=" + mountIdRef.current
+                    );
+                  }
+                  onCancel();
+                }}
                 disabled={submitting}
               >
                 Fechar

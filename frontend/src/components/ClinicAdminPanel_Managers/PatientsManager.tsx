@@ -1,3 +1,5 @@
+// SOMENTE diffs relevantes ao modal de procedimentos: adicionamos logs de debug
+// Substitua seu arquivo inteiro por este se quiser manter exatamente igual ao patch anterior + logs.
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { Plus, Search, Edit, Trash2, BookOpenCheck, ActivitySquare, Eye } from 'lucide-react';
@@ -12,6 +14,8 @@ import {
   updatePatientAnamnesisTcle,
 } from '@/api/patientsApi';
 import { fileUrl } from '@/api/apiBase';
+
+const DBG_PREFIX_PM = "[PatientsManager][debug]";
 
 function getClinicId(): string {
   const id = localStorage.getItem('clinic_id');
@@ -40,7 +44,7 @@ export interface PatientsManagerProps {
   setPatients: React.Dispatch<React.SetStateAction<Patient[]>>;
   onDeletePatient: (id: number) => void;
   onShowMainData: (patient: Patient) => void;
-  onShowProcedures?: (patient: Patient) => void; // agora pode vir do container, mas também usamos local
+  onShowProcedures?: (patient: Patient) => void;
   onShowAnamneseTcle: (patient: Patient) => void;
   getPatientFullData?: (patient: Patient) => Promise<{
     patient: any;
@@ -58,7 +62,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   setPatients,
   onDeletePatient,
   onShowMainData,
-  onShowProcedures, // (se fornecido, ainda podemos delegar)
+  onShowProcedures,
   onShowAnamneseTcle,
   getPatientFullData,
   onShowFullView,
@@ -69,8 +73,6 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [showAnamneseTcleModal, setShowAnamneseTcleModal] = useState<Patient | null>(null);
-
-  // Modal de procedimentos
   const [showProceduresModal, setShowProceduresModal] = useState<Patient | null>(null);
   const [loadingProceduresModal, setLoadingProceduresModal] = useState(false);
 
@@ -116,8 +118,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         setPatients(prev => [...prev, newPatient]);
       }
       handleCloseModal();
-    } catch (e) {
-      // eslint-disable-next-line no-alert
+    } catch {
       alert('Erro ao salvar paciente.');
     }
   };
@@ -147,10 +148,6 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     }
   };
 
-  /**
-   * Salva procedimentos (já criados/atualizados pelo formulário)
-   * Depois recarrega procedures e mantém modal aberto (NÃO fecha).
-   */
   const handleSaveProcedures = async (_procedures: any[]) => {
     if (!showProceduresModal) return;
     const patientId = showProceduresModal.id;
@@ -160,23 +157,21 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
       setPatients(prev =>
         prev.map(p => (p.id === patientId ? { ...p, procedures: updatedProcedures } : p))
       );
-      // NÃO fechar o modal automaticamente:
-      // setShowProceduresModal(null);
-      // Atualiza a referência do modal com a lista nova:
       setShowProceduresModal(prev =>
         prev ? { ...prev, procedures: updatedProcedures } : prev
       );
+      // eslint-disable-next-line no-console
+      console.log(DBG_PREFIX_PM, "handleSaveProcedures -> reloaded procedures", {
+        patientId,
+        count: updatedProcedures.length,
+      });
     } catch {
       alert('Erro ao salvar procedimentos do paciente.');
     }
   };
 
-  /**
-   * Abre modal de procedimentos carregando procedures se necessário.
-   */
   const handleOpenProceduresModal = async (patient: Patient) => {
     if (loadingProceduresModal) return;
-    // Se quiser delegar externamente:
     if (onShowProcedures) {
       onShowProcedures(patient);
       return;
@@ -186,20 +181,37 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     if (!patient.procedures) {
       try {
         setLoadingProceduresModal(true);
+        // eslint-disable-next-line no-console
+        console.log(DBG_PREFIX_PM, "Carregando procedures para paciente", patient.id);
         const procs = await fetchPatientProcedures(patient.id, clinicId);
-        // Atualiza lista de pacientes
         setPatients(prev =>
           prev.map(p => (p.id === patient.id ? { ...p, procedures: procs } : p))
         );
         targetPatient = { ...patient, procedures: procs };
+        // eslint-disable-next-line no-console
+        console.log(DBG_PREFIX_PM, "Procedures carregados", {
+          patientId: patient.id,
+          count: procs.length,
+        });
       } catch {
         alert('Erro ao carregar procedimentos do paciente.');
         return;
       } finally {
         setLoadingProceduresModal(false);
       }
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(DBG_PREFIX_PM, "Procedures já existiam no objeto do paciente", {
+        patientId: patient.id,
+        count: patient.procedures.length,
+      });
     }
     setShowProceduresModal(targetPatient);
+    // eslint-disable-next-line no-console
+    console.log(DBG_PREFIX_PM, "Abrindo modal procedimentos", {
+      patientId: targetPatient.id,
+      count: targetPatient.procedures ? targetPatient.procedures.length : 0,
+    });
   };
 
   const addButtonClasses =
@@ -208,7 +220,6 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Modais */}
       {showModal && (
         <PatientMainDataForm
           patient={modalMode === 'edit' && selectedPatient ? patientToForm(selectedPatient) : undefined}
@@ -232,15 +243,19 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
 
       {showProceduresModal && (
         <PatientProceduresForm
-            patientId={showProceduresModal.id}
+          patientId={showProceduresModal.id}
           procedures={showProceduresModal.procedures}
           onSave={handleSaveProcedures}
-          onCancel={() => setShowProceduresModal(null)}
-          // closeOnSave={false} // garantir que não fecha automaticamente
+          onCancel={() => {
+            // eslint-disable-next-line no-console
+            console.log(DBG_PREFIX_PM, "Fechando modal procedimentos");
+            setShowProceduresModal(null);
+          }}
+          closeOnSave={false}
+          debug={true}
         />
       )}
 
-      {/* Header / Filtros */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-8 gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Pacientes</h2>
         <div className="flex flex-col md:flex-row gap-3 items-center">
@@ -277,7 +292,6 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         </div>
       </div>
 
-      {/* Tabela */}
       <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
