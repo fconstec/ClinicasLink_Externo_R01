@@ -23,7 +23,18 @@ export function toDraft(p: PersistedProcedure): ProcedureDraft {
 
 interface SubmitAllOptions {
   onSave?: (persisted: PersistedProcedure[]) => void;
-  // Removemos onCancel automático para não fechar o modal ao salvar
+}
+
+/**
+ * Helper para contornar a regra no-restricted-globals (uso direto de confirm).
+ * Facilita futura substituição por modal custom.
+ */
+function safeConfirm(message: string) {
+  if (typeof window !== "undefined" && typeof window.confirm === "function") {
+    return window.confirm(message);
+  }
+  // Em ambiente sem window (SSR / testes) retorna true para não travar fluxo
+  return true;
 }
 
 export function useProcedureForm(
@@ -61,22 +72,23 @@ export function useProcedureForm(
     async (index: number) => {
       const proc = rowData[index];
       if (!proc) return;
-      // Se ainda não foi salvo (id negativo), só remove local
       if (proc.id <= 0) {
+        // Ainda não persistido
         removeProcedureLocal(index);
         return;
       }
       if (!clinicId) {
-        alert("clinicId não encontrado.");
+        // Evitar alerts no futuro: trocar por toast UI
+        window.alert?.("clinicId não encontrado.");
         return;
       }
-      if (!confirm("Confirmar exclusão do procedimento?")) return;
+      if (!safeConfirm("Confirmar exclusão do procedimento?")) return;
       try {
         await deletePatientProcedure(proc.id, clinicId);
         removeProcedureLocal(index);
       } catch (err) {
         console.error("[Procedures][delete] erro:", err);
-        alert("Erro ao excluir procedimento.");
+        window.alert?.("Erro ao excluir procedimento.");
       }
     },
     [rowData, clinicId, removeProcedureLocal]
@@ -104,7 +116,7 @@ export function useProcedureForm(
   const submitAll = useCallback(
     async ({ onSave }: SubmitAllOptions = {}) => {
       if (!clinicId) {
-        alert("clinicId não encontrado.");
+        window.alert?.("clinicId não encontrado.");
         return;
       }
       setSubmitting(true);
@@ -114,15 +126,13 @@ export function useProcedureForm(
 
         for (const draft of rowData) {
           const payload = buildPayload(draft);
-            if (draft.id <= 0) {
+          if (draft.id <= 0) {
             const created = await addPatientProcedure(patientId, payload);
             persisted.push(created as any);
           } else {
-            // Se quiser ativar update no futuro:
-            /*
-            const updated = await updatePatientProcedure(draft.id, payload);
-            persisted.push(updated as any);
-            */
+            // Caso ative update depois:
+            // const updated = await updatePatientProcedure(draft.id, payload);
+            // persisted.push(updated as any);
             persisted.push({
               id: draft.id,
               date: draft.date,
@@ -142,7 +152,7 @@ export function useProcedureForm(
         setTimeout(() => setSavingMessage(null), 2500);
       } catch (err) {
         console.error("[Procedures][submitAll] erro geral:", err);
-        alert("Erro ao salvar procedimentos.");
+        window.alert?.("Erro ao salvar procedimentos.");
       } finally {
         setSubmitting(false);
       }
