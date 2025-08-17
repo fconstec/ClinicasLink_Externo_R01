@@ -1,11 +1,11 @@
 import React, { useRef } from "react";
 import { Trash2, Plus, ZoomIn } from "lucide-react";
-import { fileUrl } from "../../../../api/apiBase";
 import {
   ProcedureDraft,
   ProcedureImage,
   StoredProcedureImage,
 } from "../../../../types/procedureDraft";
+import { resolveImageUrl } from "@/utils/resolveImage";
 
 interface ProcedureRowProps
   extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
@@ -15,17 +15,6 @@ interface ProcedureRowProps
   onAddImage: (file: File) => void;
   onRemoveImage: (img: ProcedureImage | StoredProcedureImage) => void;
   onViewImage: (imgIdx: number) => void;
-}
-
-function normalizeImageUrl(img: ProcedureImage): string {
-  if (img instanceof File) return URL.createObjectURL(img);
-  const raw = (img as any).url?.trim() || "";
-  if (!raw) return "";
-  if (/^https?:/i.test(raw)) return raw;
-  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
-    return fileUrl(raw.startsWith("/uploads/") ? raw : "/" + raw);
-  }
-  return fileUrl(raw.startsWith("/") ? raw : "/" + raw);
 }
 
 const ProcedureRow: React.FC<ProcedureRowProps> = ({
@@ -126,28 +115,47 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
 
       <div className="flex gap-1 mt-2 flex-wrap">
         {procedure.images.map((img, i) => {
-          const url = normalizeImageUrl(img);
-          const name =
+          const url = resolveImageUrl(img);
+            const name =
             img instanceof File
               ? img.name
               : (img as any).fileName ||
                 (img as any).filename ||
-                `Imagem #${(img as any).id}`;
+                (img as any).name ||
+                `Imagem #${(img as any).id || i}`;
           return (
             <div
               key={
                 img instanceof File
                   ? `file-${name}-${i}`
-                  : `persisted-${(img as any).id}-${i}`
+                  : `persisted-${(img as any).id ?? name}-${i}`
               }
               className="relative flex flex-col items-center group cursor-pointer"
             >
-              <img
-                src={url}
-                alt={name}
-                className="w-14 h-14 object-cover rounded-xl border border-[#e5e8ee] mb-1 shadow transition hover:scale-105"
-                onClick={() => onViewImage(i)}
-              />
+              {url ? (
+                <img
+                  src={url}
+                  alt={name}
+                  className="w-14 h-14 object-cover rounded-xl border border-[#e5e8ee] mb-1 shadow transition hover:scale-105"
+                  onClick={() => onViewImage(i)}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    el.style.display = "none";
+                    const parent = el.parentElement;
+                    if (parent && !parent.querySelector(".img-fallback")) {
+                      const span = document.createElement("span");
+                      span.className =
+                        "img-fallback text-[9px] p-1 text-gray-400 text-center break-all w-14 h-14 border border-dashed border-gray-300 rounded-xl flex items-center justify-center";
+                      span.textContent = name;
+                      parent.insertBefore(span, el.nextSibling);
+                    }
+                  }}
+                />
+              ) : (
+                <span className="text-[9px] p-1 text-gray-400 text-center break-all w-14 h-14 border border-dashed border-gray-300 rounded-xl mb-1 flex items-center justify-center">
+                  {name}
+                </span>
+              )}
               <button
                 type="button"
                 className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-gray-400 opacity-0 group-hover:opacity-100 hover:text-[#e11d48] shadow p-0.5 transition"
@@ -156,14 +164,16 @@ const ProcedureRow: React.FC<ProcedureRowProps> = ({
               >
                 <Trash2 className="h-3 w-3" />
               </button>
-              <button
-                type="button"
-                className="absolute bottom-1 right-1 bg-white rounded-full opacity-80 group-hover:opacity-100 p-0.5 shadow"
-                title="Ampliar"
-                onClick={() => onViewImage(i)}
-              >
-                <ZoomIn className="w-3 h-3 text-[#e11d48]" />
-              </button>
+              {url && (
+                <button
+                  type="button"
+                  className="absolute bottom-1 right-1 bg-white rounded-full opacity-80 group-hover:opacity-100 p-0.5 shadow"
+                  title="Ampliar"
+                  onClick={() => onViewImage(i)}
+                >
+                  <ZoomIn className="w-3 h-3 text-[#e11d48]" />
+                </button>
+              )}
             </div>
           );
         })}

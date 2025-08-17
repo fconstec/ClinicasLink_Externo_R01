@@ -11,7 +11,16 @@ import {
   updatePatient,
   updatePatientAnamnesisTcle,
 } from '@/api/patientsApi';
-import { fileUrl } from '@/api/apiBase';
+import { resolveImageUrl } from '@/utils/resolveImage';
+
+// Importa os tipos específicos usados no formulário de procedimentos
+// Caminho para src/types/procedureDraft.ts (ajuste se seu arquivo estiver em outro lugar)
+import {
+  PersistedProcedure,
+  StoredProcedureImage,
+} from '../../types/procedureDraft'; // <- confirme este caminho.
+// Se esse caminho estiver incorreto, tente: import { PersistedProcedure, StoredProcedureImage } from '../../types/procedureDraft';
+// ou: import { PersistedProcedure, StoredProcedureImage } from '@/types/procedureDraft';
 
 function getClinicId(): string {
   const id = localStorage.getItem('clinic_id');
@@ -19,20 +28,53 @@ function getClinicId(): string {
   return id;
 }
 
-function getPhotoUrl(photo?: string | null): string | undefined {
-  if (!photo) return undefined;
-  return fileUrl(photo);
-}
-
 function patientToForm(patient: Patient): Partial<PatientMainData> {
   return {
     name: patient.name,
-    birthDate: patient.birthDate,
+    birthDate: patient.birthDate!,
     phone: patient.phone || '',
-    email: patient.email,
+    email: patient.email || '',
     address: patient.address || '',
     photo: patient.photo ?? undefined,
   };
+}
+
+/**
+ * Adapta a lista "genérica" (Procedure[]) armazenada em Patient
+ * para o tipo mais estrito PersistedProcedure[] exigido pelo PatientProceduresForm.
+ * Garante que cada imagem tenha url: string (nunca undefined).
+ */
+function adaptProcedures(procs: any[] | undefined): PersistedProcedure[] | undefined {
+  if (!procs) return undefined;
+  return procs.map(p => {
+    const images: StoredProcedureImage[] | undefined = p.images
+      ? p.images.map((img: any) => {
+          const ensuredUrl =
+            img.url ||
+            img.fileUrl ||
+            img.fileName ||
+            img.filename ||
+            img.path ||
+            img.filePath ||
+            ''; // pode ficar vazia (o formulário já lida)
+          return {
+            ...img,
+            url: ensuredUrl,
+            fileName: img.fileName || img.filename || img.file_name || img.name,
+          } as StoredProcedureImage;
+        })
+      : undefined;
+
+    const persisted: PersistedProcedure = {
+      id: p.id,
+      date: p.date ?? '',
+      description: p.description ?? '',
+      professional: p.professional ?? '',
+      value: p.value ?? '',
+      images,
+    };
+    return persisted;
+  });
 }
 
 export interface PatientsManagerProps {
@@ -103,18 +145,26 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
           ...formData,
           clinicId,
         });
-        setPatients(prev =>
-          prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p))
+        setPatients((prev: Patient[]) =>
+          prev.map(p =>
+            p.id === updated.id
+              ? { ...p, ...updated, photoUrl: resolveImageUrl(updated.photo || updated.photoUrl) }
+              : p
+          )
         );
       } else {
         const newPatient = await addPatient({
           ...formData,
           clinicId,
         });
-        setPatients(prev => [...prev, newPatient]);
+        setPatients((prev: Patient[]) => [
+          ...prev,
+          { ...newPatient, photoUrl: resolveImageUrl(newPatient.photo || newPatient.photoUrl) },
+        ]);
       }
       handleCloseModal();
-    } catch {
+    } catch (err) {
+      console.error('[PatientsManager] Erro ao salvar paciente:', err);
       alert('Erro ao salvar paciente.');
     }
   };
@@ -131,7 +181,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         tcle: formData.tcle,
       });
 
-      setPatients(prev =>
+      setPatients((prev: Patient[]) =>
         prev.map(p =>
           p.id === formData.patientId
             ? { ...p, anamnesis: formData.anamnesis, tcle: formData.tcle }
@@ -139,7 +189,8 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         )
       );
       setShowAnamneseTcleModal(null);
-    } catch {
+    } catch (err) {
+      console.error('[PatientsManager] Erro ao salvar Anamnese / TCLE:', err);
       alert('Erro ao salvar Anamnese / TCLE.');
     }
   };
@@ -150,13 +201,16 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     const clinicId = getClinicId();
     try {
       const updatedProcedures = await fetchPatientProcedures(patientId, clinicId);
-      setPatients(prev =>
-        prev.map(p => (p.id === patientId ? { ...p, procedures: updatedProcedures } : p))
+      setPatients((prev: Patient[]) =>
+        prev.map(p =>
+          p.id === patientId ? { ...p, procedures: updatedProcedures } : p
+        )
       );
       setShowProceduresModal(prev =>
         prev ? { ...prev, procedures: updatedProcedures } : prev
       );
-    } catch {
+    } catch (err) {
+      console.error('[PatientsManager] Erro ao salvar procedimentos:', err);
       alert('Erro ao salvar procedimentos do paciente.');
     }
   };
@@ -171,11 +225,14 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
     try {
       setLoadingProceduresModal(true);
       const procs = await fetchPatientProcedures(patient.id, clinicId);
-      setPatients(prev =>
-        prev.map(p => (p.id === patient.id ? { ...p, procedures: procs } : p))
+      setPatients((prev: Patient[]) =>
+        prev.map(p =>
+          p.id === patient.id ? { ...p, procedures: procs } : p
+        )
       );
       setShowProceduresModal({ ...patient, procedures: procs });
-    } catch {
+    } catch (err) {
+      console.error('[PatientsManager] Erro ao carregar procedimentos:', err);
       alert('Erro ao carregar procedimentos do paciente.');
     } finally {
       setLoadingProceduresModal(false);
@@ -203,7 +260,10 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
           patientName={showAnamneseTcleModal.name}
           anamnesis={showAnamneseTcleModal.anamnesis}
           tcle={showAnamneseTcleModal.tcle}
-          patientPhotoUrl={getPhotoUrl(showAnamneseTcleModal.photo)}
+          patientPhotoUrl={
+            showAnamneseTcleModal.photoUrl ||
+            resolveImageUrl(showAnamneseTcleModal.photo)
+          }
           onSave={handleSaveAnamneseTcle}
           onCancel={() => setShowAnamneseTcleModal(null)}
         />
@@ -213,7 +273,7 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
         <PatientProceduresForm
           clinicId={getClinicId()}
           patientId={showProceduresModal.id}
-          procedures={showProceduresModal.procedures}
+          procedures={adaptProcedures(showProceduresModal.procedures)}
           onSave={handleSaveProcedures}
           onCancel={() => setShowProceduresModal(null)}
           closeOnSave={false}
@@ -279,80 +339,86 @@ const PatientsManager: React.FC<PatientsManagerProps> = ({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredPatients.length > 0 ? (
-              filteredPatients.map(patient => (
-                <tr key={patient.id} className="hover:bg-gray-50/70">
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {patient.photo && (
-                        <img
-                          src={getPhotoUrl(patient.photo)}
-                          alt="Foto"
-                          className="w-8 h-8 rounded-full object-cover border border-gray-200 mr-2"
-                        />
-                      )}
-                      <span className="text-sm font-medium text-gray-900">
-                        {patient.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {patient.birthDate
-                      ? new Date(patient.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-                      : <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {patient.phone || <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {patient.email || <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => handleShowEditModal(patient)}
-                        className="p-2 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-800 transition"
-                        title="Editar Dados Cadastrais"
-                        aria-label="Editar Dados Cadastrais"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setShowAnamneseTcleModal(patient)}
-                        className="p-2 rounded hover:bg-amber-50 text-amber-600 hover:text-amber-800 transition"
-                        title="Anamnese e TCLE"
-                        aria-label="Anamnese e TCLE"
-                      >
-                        <ActivitySquare className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenProceduresModal(patient)}
-                        className="p-2 rounded hover:bg-sky-50 text-sky-600 hover:text-sky-800 transition disabled:opacity-50"
-                        title="Registros de Procedimentos"
-                        aria-label="Registros de Procedimentos"
-                        disabled={loadingProceduresModal}
-                      >
-                        <BookOpenCheck className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleShowFullView(patient)}
-                        className="p-2 rounded hover:bg-green-50 text-green-600 hover:text-green-800 transition"
-                        title="Visualizar ficha completa"
-                        aria-label="Visualizar ficha completa"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => onDeletePatient(patient.id)}
-                        className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
-                        title="Excluir Paciente"
-                        aria-label="Excluir Paciente"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              filteredPatients.map(patient => {
+                const photoSrc = patient.photoUrl || resolveImageUrl(patient.photo);
+                return (
+                  <tr key={patient.id} className="hover:bg-gray-50/70">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {photoSrc && (
+                          <img
+                            src={photoSrc}
+                            alt="Foto"
+                            className="w-8 h-8 rounded-full object-cover border border-gray-200 mr-2"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                            }}
+                          />
+                        )}
+                        <span className="text-sm font-medium text-gray-900">
+                          {patient.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {patient.birthDate
+                        ? new Date(patient.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {patient.phone || <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {patient.email || <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleShowEditModal(patient)}
+                          className="p-2 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-800 transition"
+                          title="Editar Dados Cadastrais"
+                          aria-label="Editar Dados Cadastrais"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setShowAnamneseTcleModal(patient)}
+                          className="p-2 rounded hover:bg-amber-50 text-amber-600 hover:text-amber-800 transition"
+                          title="Anamnese e TCLE"
+                          aria-label="Anamnese e TCLE"
+                        >
+                          <ActivitySquare className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenProceduresModal(patient)}
+                          className="p-2 rounded hover:bg-sky-50 text-sky-600 hover:text-sky-800 transition disabled:opacity-50"
+                          title="Registros de Procedimentos"
+                          aria-label="Registros de Procedimentos"
+                          disabled={loadingProceduresModal}
+                        >
+                          <BookOpenCheck className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleShowFullView(patient)}
+                          className="p-2 rounded hover:bg-green-50 text-green-600 hover:text-green-800 transition"
+                          title="Visualizar ficha completa"
+                          aria-label="Visualizar ficha completa"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => onDeletePatient(patient.id)}
+                          className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
+                          title="Excluir Paciente"
+                          aria-label="Excluir Paciente"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td

@@ -9,12 +9,33 @@ import {
   deletePatient,
   fetchFullPatientData,
 } from "@/api/patientsApi";
-import { fileUrl } from "@/api/apiBase";
+import { resolveImageUrl } from "@/utils/resolveImage";
 
 const currentProfessionalId = 1;
 
 function getClinicId(): string | null {
   return localStorage.getItem("clinic_id");
+}
+
+function normalizePatient(p: any): Patient {
+  const clone: any = { ...p };
+  const raw =
+    clone.photo ??
+    clone.photoUrl ??
+    clone.url ??
+    clone.fileUrl ??
+    clone.path ??
+    clone.filePath ??
+    clone.filename ??
+    clone.fileName ??
+    null;
+
+  clone.photoUrl = resolveImageUrl(raw);
+  return clone as Patient;
+}
+
+function normalizePatients(list: any[]): Patient[] {
+  return (list || []).map(normalizePatient);
 }
 
 const PatientsManagerContainer: React.FC = () => {
@@ -42,7 +63,8 @@ const PatientsManagerContainer: React.FC = () => {
     const controller = new AbortController();
     try {
       const data = await fetchPatients(id, undefined, controller.signal);
-      setPatients(data);
+      const norm = normalizePatients(data);
+      setPatients(norm);
     } catch (e: any) {
       if (e?.name !== "AbortError") {
         setError("Erro ao buscar pacientes.");
@@ -65,11 +87,10 @@ const PatientsManagerContainer: React.FC = () => {
 
   const handleDeletePatient = async (patientId: number) => {
     if (!clinicId) return;
-    const confirmed = window.confirm("Tem certeza que deseja excluir este paciente?");
-    if (!confirmed) return;
+    if (!window.confirm("Tem certeza que deseja excluir este paciente?")) return;
     try {
       await deletePatient(patientId, clinicId);
-      setPatients(prev => prev.filter(p => p.id !== patientId));
+      setPatients((prev: Patient[]) => prev.filter(p => p.id !== patientId));
       alert("Paciente excluído com sucesso!");
     } catch (e: any) {
       alert(`Erro ao excluir paciente: ${e?.message || e}`);
@@ -91,25 +112,36 @@ const PatientsManagerContainer: React.FC = () => {
     setLoading(true);
     try {
       const data = await fetchFullPatientData(patient, clinicId);
-      setFullPatientData(data);
+      const fullNorm = {
+        ...data,
+        patient: normalizePatient(data.patient || patient),
+      };
+      setFullPatientData(fullNorm);
       setShowFullView(true);
     } finally {
       setLoading(false);
     }
   };
 
+  function updateOnePatient(id: number, patch: any) {
+    setPatients((prev: Patient[]) =>
+      prev.map(p =>
+        p.id === id
+          ? normalizePatient({ ...p, ...patch })
+          : p
+      )
+    );
+  }
+
   if (loading) return <div className="p-4 text-center text-gray-500">Carregando pacientes...</div>;
   if (error || !clinicId) return <div className="text-center text-red-500 p-4">{error}</div>;
 
-  // Form principal de dados cadastrais
   if (showMainDataForm && selectedPatient) {
     return (
       <PatientMainDataForm
         patient={selectedPatient}
         onSave={(newData) => {
-          setPatients(prev =>
-            prev.map(p => (p.id === selectedPatient.id ? { ...p, ...newData } : p))
-          );
+          updateOnePatient(selectedPatient.id, newData);
           setShowMainDataForm(false);
         }}
         onCancel={() => setShowMainDataForm(false)}
@@ -117,26 +149,14 @@ const PatientsManagerContainer: React.FC = () => {
     );
   }
 
-  // Anamnese / TCLE
   if (showAnamneseTcleForm && selectedPatient) {
     return (
       <PatientAnamneseTcleForm
         patientId={selectedPatient.id}
         professionalId={currentProfessionalId}
         patientName={selectedPatient.name}
-        anamnesis={selectedPatient.anamnesis}
-        tcle={selectedPatient.tcle}
-        patientPhotoUrl={
-          selectedPatient.photo
-            ? (typeof selectedPatient.photo === "string" ? fileUrl(selectedPatient.photo) : "")
-            : undefined
-        }
-        onSave={({ anamnesis, tcle }) => {
-          setPatients(prev =>
-            prev.map(p =>
-              p.id === selectedPatient.id ? { ...p, anamnesis, tcle } : p
-            )
-          );
+        patientPhotoUrl={selectedPatient.photoUrl || selectedPatient.photo || ""}
+        onSave={() => {
           setShowAnamneseTcleForm(false);
         }}
         onCancel={() => setShowAnamneseTcleForm(false)}
@@ -144,7 +164,6 @@ const PatientsManagerContainer: React.FC = () => {
     );
   }
 
-  // Visualização completa
   if (showFullView && fullPatientData) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 py-8 px-2 overflow-y-auto">
@@ -171,9 +190,7 @@ const PatientsManagerContainer: React.FC = () => {
       setPatients={setPatients}
       onDeletePatient={handleDeletePatient}
       onShowMainData={handleShowMainData}
-      onShowProcedures={
-        undefined /* sempre usamos o modal interno agora; deixar undefined */
-      }
+      onShowProcedures={undefined}
       onShowAnamneseTcle={handleShowAnamneseTcle}
       getPatientFullData={
         clinicId

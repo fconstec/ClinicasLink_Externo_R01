@@ -8,9 +8,8 @@ export interface Professional {
   specialty: string;
   photo: string;
   available: boolean;
-  // Campo vindo do backend em snake_case; normalizar para clinicId quando consumir.
-  clinic_id?: number;
-  clinicId?: number;
+  clinic_id?: number;  // snake_case do backend
+  clinicId?: number;   // normalizado
   email?: string;
   phone?: string;
   resume?: string;
@@ -22,7 +21,7 @@ export interface NewProfessionalData {
   specialty: string;
   photo: string;
   available: boolean;
-  clinicId: number; // camelCase para envio
+  clinicId: number;
   email?: string;
   phone?: string;
   resume?: string;
@@ -35,10 +34,6 @@ export interface NewProfessionalData {
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
 
-/**
- * Forma crua que pode vir do backend (múltiplas variações).
- * Usada APENAS como input para normalização.
- */
 export interface RawAppointment {
   id: number | string;
   patientId?: number | null;
@@ -83,28 +78,25 @@ export interface RawAppointment {
   utc_date_time?: string;
   utcDateTime?: string;
 
-  [key: string]: any; // tolera extras
+  [key: string]: any;
 }
 
-/**
- * Forma normalizada: usar somente esta internamente.
- */
 export interface Appointment {
   id: number;
   patientId?: number;
-  patientName: string;         // tornar obrigatório simplifica renderizações
+  patientName: string;
   patientPhone?: string;
 
   serviceId?: number;
   serviceName?: string;
-  service?: string;            // opcional (pode remover depois se for redundante)
+  service?: string;
 
   professionalId: number;
   professionalName?: string;
 
-  date: string;                // YYYY-MM-DD
-  time: string;                // HH:MM
-  endTime?: string;            // HH:MM
+  date: string;     // YYYY-MM-DD
+  time: string;     // HH:MM
+  endTime?: string; // HH:MM
 
   status: AppointmentStatus;
   notes?: string;
@@ -114,12 +106,9 @@ export interface Appointment {
 
   startUTC?: string;
   endUTC?: string;
-  utcDateTime?: Date;          // enriquecido no front (derivado)
+  utcDateTime?: Date; // derivado
 }
 
-/**
- * Dados para criar/atualizar (sem id).
- */
 export interface NewAppointmentData {
   patientId?: number | null;
   patientName?: string;
@@ -134,9 +123,6 @@ export interface NewAppointmentData {
   notes?: string;
 }
 
-/**
- * Dados submetidos pelo formulário (status opcional para fallback).
- */
 export interface SubmittedFormData {
   patientId?: number | null;
   patientName?: string;
@@ -160,11 +146,19 @@ export type AppointmentMapper = (raw: RawAppointment) => Appointment;
 // PROCEDIMENTOS
 // =============================================================
 
+/**
+ * Imagem de procedimento persistida.
+ * Várias chaves possíveis porque o backend pode variar.
+ * A função resolveImageUrl cuidará de montar uma URL exibível.
+ */
 export interface ProcedureImage {
   id: number;
-  url: string;
+  url?: string;
   fileName?: string;
-  procedure_id?: number; // vindo do backend
+  filename?: string;
+  path?: string;
+  filePath?: string;
+  procedure_id?: number;
 }
 
 export interface Procedure {
@@ -186,7 +180,7 @@ export interface Evolution {
   tcle: string;
   patientId: number;
   professionalId: number;
-  tcle_concordado: boolean; // manter se backend envia snake_case
+  tcle_concordado: boolean;
   tcle_nome: string;
   tcle_data_hora: string;
   createdAt: string;
@@ -203,13 +197,26 @@ export interface Patient {
   phone: string;
   email: string;
   address: string;
+
+  /**
+   * Valor bruto da foto armazenado no banco (nome simples, caminho relativo ou URL).
+   * Não altere esse campo antes de enviar ao backend.
+   */
   photo?: string | null;
+
   images?: string[];
   procedures?: Procedure[];
   evolutions?: Evolution[];
   anamnesis?: string;
   tcle?: string;
   appointments?: Appointment[];
+
+  /**
+   * Campo DERIVADO (frontend) para exibição em <img>.
+   * Preenchido pela normalização (ex.: resolveImageUrl(photo)).
+   * Nunca enviar ao backend.
+   */
+  photoUrl?: string;
 }
 
 // =============================================================
@@ -247,7 +254,6 @@ export type NewStockItemData = Omit<StockItem, "id" | "updatedAt"> & {
 
 // =============================================================
 // INFORMAÇÕES INSTITUCIONAIS DA CLÍNICA
-// (Aqui ainda há snake_case vindo do backend; considere normalizar depois.)
 // =============================================================
 
 export interface ClinicInfoData {
@@ -272,8 +278,8 @@ export interface ClinicInfoData {
   longitude_address?: number | null;
   latitude_map?: number | null;
   longitude_map?: number | null;
-  latitude?: number | null;   // se decidir normalizar
-  longitude?: number | null;  // se decidir normalizar
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 // =============================================================

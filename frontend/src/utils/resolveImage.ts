@@ -1,20 +1,14 @@
 import { fileUrl } from "@/api/apiBase";
 
 /**
- * Aceita File, string ou objeto com diversos campos de caminho/url
- * e retorna uma URL utilizável no <img>.
+ * Converte um valor (File | string | objeto com múltiplos campos) em uma URL exibível.
+ * Suporta variações comuns vindas do backend.
  */
-export function resolveImageUrl(
-  src: File | string | (Record<string, any> & { url?: string }) | null | undefined
-): string {
+export function resolveImageUrl(src: any): string {
   if (!src) return "";
-  if (src instanceof File) {
-    return URL.createObjectURL(src);
-  }
-  if (typeof src === "string") {
-    return buildFromRaw(src);
-  }
-  // Objeto: testar múltiplos campos.
+  if (src instanceof File) return URL.createObjectURL(src);
+  if (typeof src === "string") return buildFromRaw(src);
+
   const candidates = [
     src.url,
     src.fileUrl,
@@ -26,7 +20,7 @@ export function resolveImageUrl(
     src.fullPath,
     src.filename,
     src.fileName,
-    src.name, // às vezes backend devolve apenas name (cuidado: pode conflitar com File.name serializado)
+    src.name, // pode ser apenas nome cru
   ].filter(Boolean) as string[];
 
   for (const c of candidates) {
@@ -37,17 +31,27 @@ export function resolveImageUrl(
 }
 
 function buildFromRaw(raw: string): string {
-  if (!raw) return "";
-  const r = raw.trim();
+  const r = (raw || "").trim();
   if (!r) return "";
   if (/^(https?:|data:|blob:)/i.test(r)) return r;
-  if (r.startsWith("/uploads/") || r.startsWith("/")) {
-    return fileUrl(r.startsWith("/uploads/") || r.startsWith("/") ? r : "/" + r);
-  }
+
+  // Caminhos absolutos
+  if (r.startsWith("/uploads/")) return fileUrl(r);
+  if (r.startsWith("/")) return fileUrl(r);
+
+  // Caminho relativo indicando uploads
   if (r.startsWith("uploads/")) return fileUrl("/" + r);
-  // Heurística: se parece um nome de arquivo (tem extensão), prefixar /uploads/
-  if (/\.[a-z0-9]{2,5}($|\?)/i.test(r)) {
-    return fileUrl("/uploads/" + r);
-  }
+
+  // Nome simples com extensão
+  if (/\.[a-z0-9]{2,5}($|\?)/i.test(r)) return fileUrl("/uploads/" + r);
+
+  // Último fallback: prefixa barra
   return fileUrl("/" + r);
+}
+
+/**
+ * Auxiliar de debug (opcional)
+ */
+export function debugResolveImage(src: any) {
+  return { original: src, resolved: resolveImageUrl(src) };
 }
