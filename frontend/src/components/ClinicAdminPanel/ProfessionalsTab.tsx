@@ -11,9 +11,6 @@ import {
   deleteProfessional,
   fetchProfessionals,
 } from "@/api/professionalsApi";
-
-// Ajuste do import: caminho relativo porque alias '@' estava falhando
-// Se configurar paths no tsconfig (baseUrl: "src", paths: {"@/*": ["*"]}) pode voltar para "@/utils/normalizeProfessional"
 import {
   normalizeProfessional,
   normalizeProfessionals,
@@ -23,6 +20,11 @@ interface ProfessionalsTabProps {
   professionals: Professional[];
   clinicId: number;
   reloadProfessionals: () => Promise<void>;
+}
+
+// Helper para evitar uso direto de confirm (alguns linters reclamam)
+function safeConfirm(message: string): boolean {
+  return typeof window !== "undefined" ? window.confirm(message) : true;
 }
 
 const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
@@ -39,7 +41,6 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Normaliza lista inicial
   useEffect(() => {
     setProfessionals(normalizeProfessionals(initialProfessionals || []));
   }, [initialProfessionals]);
@@ -47,7 +48,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   const localReload = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchProfessionals(clinicId); // agora aceitaremos number | string
+      const data = await fetchProfessionals(clinicId);
       setProfessionals(normalizeProfessionals(data));
     } catch (e: any) {
       console.error("[ProfessionalsTab] Erro reload:", e);
@@ -79,7 +80,6 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     setLoading(true);
     try {
       if ("id" in data && data.id != null && editingProfessional) {
-        // EDITAR
         const updated = await updateProfessional(Number(data.id), clinicId, {
           name: (data.name ?? "").trim(),
           specialty: (data.specialty ?? "").trim(),
@@ -88,14 +88,13 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
           phone: data.phone,
           resume: (data as any).resume,
           photo: (data.photo ?? "").trim(),
-          clinicId, // enviado só para consistência; API converterá para clinic_id
+          clinicId,
         });
         const norm = normalizeProfessional(updated);
         setProfessionals(prev =>
           prev.map(p => (p.id === norm.id ? { ...p, ...norm } : p))
         );
       } else {
-        // ADICIONAR
         const payload: NewProfessionalData = {
           name: (data.name ?? "").trim(),
           specialty: (data.specialty ?? "").trim(),
@@ -111,7 +110,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
         const norm = normalizeProfessional(created);
         setProfessionals(prev => {
           const filtered = prev.filter(p => p.id !== norm.id);
-            return [...filtered, norm];
+          return [...filtered, norm];
         });
       }
       closeModal();
@@ -124,11 +123,12 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   }
 
   async function handleDeleteProfessional(id: number) {
-    if (!confirm("Confirmar exclusão do profissional?")) return;
+    // Substituído confirm por safeConfirm (usa window.confirm internamente)
+    if (!safeConfirm("Confirmar exclusão do profissional?")) return;
     setError(null);
     setLoading(true);
     try {
-      await deleteProfessional(id, String(clinicId)); // passa clinicId (assinatura da API exige)
+      await deleteProfessional(id, String(clinicId));
       setProfessionals(prev => prev.filter(p => p.id !== id));
     } catch (err: any) {
       console.error("[ProfessionalsTab] Erro ao excluir:", err);
