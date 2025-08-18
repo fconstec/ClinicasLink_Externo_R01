@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ProfessionalsManager from "@/components/ClinicAdminPanel_Managers/ProfessionalsManager";
 import ProfessionalFormModal from "@/components/modals/ProfessionalFormModal";
 import type { Professional, NewProfessionalData } from "@/components/ClinicAdminPanel_Managers/types";
@@ -6,23 +6,37 @@ import {
   addProfessional,
   updateProfessional,
   fetchProfessionals,
+  deactivateProfessional,
   reactivateProfessional
 } from "@/api/professionalsApi";
-import {
-  normalizeProfessional,
-  normalizeProfessionals
-} from "@/utils/normalizeProfessional";
+import { normalizeProfessional } from "@/utils/normalizeProfessional";
 
-interface ProfessionalsTabProps {
-  professionals: Professional[];
+/**
+ * Dados para edição: parcial + id obrigatório.
+ */
+type EditProfessionalData = Partial<NewProfessionalData> & { id: number };
+
+function isEditData(d: any): d is EditProfessionalData {
+  return d && typeof d.id === "number";
+}
+
+/**
+ * Props: compatibilidade retroativa
+ * - professionals / reloadProfessionals ficaram opcionais (legado).
+ * - Se quiser simplificar depois, remova-os e ajuste ClinicAdminPanel.
+ */
+export interface ProfessionalsTabProps {
   clinicId: number;
-  reloadProfessionals: () => Promise<void>;
+  professionals?: Professional[];               // legado
+  reloadProfessionals?: () => Promise<void>;    // legado
+  onChangeOptional?: (professionals: Professional[]) => void;
 }
 
 const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
-  professionals: initialProfessionals,
   clinicId,
-  reloadProfessionals,
+  professionals: legacyProfessionals,
+  reloadProfessionals, // não usamos mais para fluxo principal
+  onChangeOptional
 }) => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isProfessionalModalOpen, setIsProfessionalModalOpen] = useState(false);
@@ -30,23 +44,39 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Normaliza lista inicial (incluir inativos, depende de como veio do pai)
-  useEffect(() => {
-    setProfessionals(normalizeProfessionals(initialProfessionals || []));
-  }, [initialProfessionals]);
+  // Evita re-aplicar professionals prop várias vezes (apenas primeira vez se fornecida)
+  const initializedFromProp = useRef(false);
 
-  const localReload = useCallback(async () => {
+  /**
+   * Carrega TODOS (ativos + inativos) apenas para a aba admin.
+   */
+  const loadAll = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await fetchProfessionals(clinicId, { includeInactive: true });
-      setProfessionals(normalizeProfessionals(data));
+      setProfessionals(data);
+      onChangeOptional?.(data);
     } catch (e: any) {
-      console.error("[ProfessionalsTab] Erro reload:", e);
-      setError("Erro ao recarregar profissionais.");
+      console.error("[ProfessionalsTab] loadAll error:", e);
+      setError(e.message || "Erro ao carregar profissionais.");
     } finally {
       setLoading(false);
     }
-  }, [clinicId]);
+  }, [clinicId, onChangeOptional]);
+
+  /**
+   * Inicialização:
+   * - Se veio lista por prop (legado) usamos ela uma vez.
+   * - Sempre disparamos loadAll para garantir consistência (pode comentar se não quiser).
+   */
+  useEffect(() => {
+    if (!initializedFromProp.current && legacyProfessionals && legacyProfessionals.length > 0) {
+      setProfessionals(legacyProfessionals);
+      initializedFromProp.current = true;
+    }
+    loadAll();
+  }, [legacyProfessionals, loadAll]);
 
   function openAddModal() {
     setEditingProfessional(null);
@@ -63,49 +93,50 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     setIsProfessionalModalOpen(false);
   }
 
+  /**
+   * Salvar (criar ou editar).
+   * Usa narrowing com isEditData para não causar erro de propriedade 'id'.
+   */
   async function handleSubmitProfessional(
-    data: NewProfessionalData | (Partial<NewProfessionalData> & { id: number })
+    formData: NewProfessionalData | EditProfessionalData
   ) {
     setError(null);
     setLoading(true);
     try {
-      if ("id" in data && data.id != null && editingProfessional) {
-        // Editar
-        const updated = await updateProfessional(Number(data.id), clinicId, {
-          name: (data.name ?? "").trim(),
-          specialty: (data.specialty ?? "").trim(),
-          available: data.available ?? true,
-          email: data.email,
-          phone: data.phone,
-          resume: (data as any).resume,
-          photo: (data.photo ?? "").trim(),
+      if (isEditData(formData) && editingProfessional) {
+        // Edição
+        const updated = await updateProfessional(formData.id, clinicId, {
+          name: (formData.name ?? "").trim(),
+          specialty: (formData.specialty ?? "").trim(),
+          available: formData.available ?? true,
+            email: formData.email,
+          phone: formData.phone,
+          resume: (formData as any).resume,
+          photo: (formData.photo ?? "").trim(),
           clinicId,
         });
         const norm = normalizeProfessional(updated);
-        setProfessionals(prev => prev.map(p => p.id === norm.id ? { ...p, ...norm } : p));
+        setProfessionals(prev => prev.map(p => (p.id === norm.id ? { ...p, ...norm } : p)));
       } else {
-        // Adicionar
+        // Criação
         const payload: NewProfessionalData = {
-          name: (data.name ?? "").trim(),
-          specialty: (data.specialty ?? "").trim(),
-          photo: (data.photo ?? "").trim(),
-          available: data.available ?? true,
+          name: (formData as NewProfessionalData).name?.trim() || "",
+          specialty: (formData as NewProfessionalData).specialty?.trim() || "",
+          photo: (formData as NewProfessionalData).photo?.trim() || "",
+          available: (formData as NewProfessionalData).available ?? true,
           clinicId,
-          email: data.email,
-          phone: data.phone,
-          resume: (data as any).resume,
-          color: (data as any).color,
+          email: (formData as NewProfessionalData).email,
+          phone: (formData as NewProfessionalData).phone,
+          resume: (formData as any).resume,
+          color: (formData as any).color,
         };
         const created = await addProfessional(payload);
         const norm = normalizeProfessional(created);
-        setProfessionals(prev => {
-          const filtered = prev.filter(p => p.id !== norm.id);
-          return [...filtered, norm];
-        });
+        setProfessionals(prev => [...prev, norm]);
       }
       closeModal();
     } catch (err: any) {
-      console.error("[ProfessionalsTab] Erro ao salvar:", err);
+      console.error("[ProfessionalsTab] save error:", err);
       setError(err.message || "Erro ao salvar profissional.");
     } finally {
       setLoading(false);
@@ -117,23 +148,11 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     setError(null);
     setLoading(true);
     try {
-      const prof = professionals.find(p => p.id === id);
-      if (!prof) return;
-      const updated = await updateProfessional(id, clinicId, {
-        name: prof.name,
-        specialty: prof.specialty,
-        email: prof.email,
-        phone: prof.phone,
-        photo: prof.photo,
-        resume: prof.resume,
-        available: prof.available,
-        active: false,
-        clinicId,
-      });
+      const updated = await deactivateProfessional(id, clinicId);
       const norm = normalizeProfessional(updated);
-      setProfessionals(prev => prev.map(p => p.id === id ? { ...p, ...norm } : p));
+      setProfessionals(prev => prev.map(p => (p.id === id ? { ...p, ...norm } : p)));
     } catch (e: any) {
-      console.error("[ProfessionalsTab] Erro ao desativar:", e);
+      console.error("[ProfessionalsTab] deactivate error:", e);
       setError(e.message || "Erro ao desativar profissional.");
     } finally {
       setLoading(false);
@@ -146,9 +165,9 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     try {
       const updated = await reactivateProfessional(id, clinicId);
       const norm = normalizeProfessional(updated);
-      setProfessionals(prev => prev.map(p => p.id === id ? { ...p, ...norm } : p));
+      setProfessionals(prev => prev.map(p => (p.id === id ? { ...p, ...norm } : p)));
     } catch (e: any) {
-      console.error("[ProfessionalsTab] Erro ao reativar:", e);
+      console.error("[ProfessionalsTab] reactivate error:", e);
       setError(e.message || "Erro ao reativar profissional.");
     } finally {
       setLoading(false);
@@ -166,6 +185,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
         loading={loading}
         error={error}
         clinicId={clinicId}
+        showInactive={true}
       />
 
       {isProfessionalModalOpen && (
@@ -177,25 +197,6 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
           clinicId={clinicId}
         />
       )}
-
-      <div className="mt-4 flex gap-3">
-        <button
-          type="button"
-            onClick={localReload}
-          className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
-          disabled={loading}
-        >
-          Recarregar (local)
-        </button>
-        <button
-          type="button"
-          onClick={reloadProfessionals}
-          className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
-          disabled={loading}
-        >
-          Recarregar (pai)
-        </button>
-      </div>
     </>
   );
 };
