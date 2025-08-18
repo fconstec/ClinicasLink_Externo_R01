@@ -3,20 +3,19 @@ import { supabase } from "../supabaseClient";
 
 const router = Router();
 
-// Listar profissionais de uma clínica específica
+// Listar (por padrão só ativos, usar ?showInactive=true para incluir todos)
 router.get("/", async (req, res) => {
   try {
-    const { clinicId } = req.query as { clinicId?: string };
+    const { clinicId, showInactive } = req.query as { clinicId?: string; showInactive?: string };
     if (!clinicId) {
       return res.status(400).json({ error: "clinicId é obrigatório" });
     }
-    const { data: professionals, error } = await supabase
-      .from("professionals")
-      .select("*")
-      .eq("clinic_id", clinicId);
-
+    let query = supabase.from("professionals").select("*").eq("clinic_id", clinicId);
+    if (!showInactive) {
+      query = query.eq("active", true);
+    }
+    const { data: professionals, error } = await query;
     if (error) throw error;
-
     res.json(professionals);
   } catch (error) {
     console.error(error);
@@ -24,11 +23,10 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Cadastrar profissional vinculado a uma clínica
+// Cadastrar
 router.post("/", async (req, res) => {
   try {
     const { name, specialty, email, phone, photo, resume, available } = req.body;
-    // Aceita tanto clinicId (camelCase) quanto clinic_id (snake_case)
     const clinicId = req.body.clinic_id || req.body.clinicId;
     if (!name || !specialty || !clinicId) {
       return res.status(400).json({ error: "Nome, especialidade e clinicId são obrigatórios." });
@@ -44,6 +42,7 @@ router.post("/", async (req, res) => {
         resume,
         clinic_id: clinicId,
         available: typeof available === "boolean" ? available : true,
+        active: true
       }])
       .select("*");
     if (insertError) throw insertError;
@@ -55,14 +54,12 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Atualizar profissional (incluindo campo available)
+// Atualizar (agora aceita active)
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-
-    // Aceita tanto clinicId (camelCase) quanto clinic_id (snake_case)
     const {
-      name, specialty, email, phone, photo, resume, available
+      name, specialty, email, phone, photo, resume, available, active
     } = req.body;
     const clinicId = req.body.clinic_id || req.body.clinicId;
 
@@ -73,7 +70,6 @@ router.put("/:id", async (req, res) => {
       return res.status(400).json({ error: "Nome, especialidade e clinicId são obrigatórios." });
     }
 
-    // Verifica se existe
     const { data: foundArr, error: findError } = await supabase
       .from("professionals")
       .select("*")
@@ -85,29 +81,31 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "Profissional não encontrado para esta clínica" });
     }
 
+    const payload: any = {
+      name,
+      specialty,
+      email,
+      phone,
+      photo,
+      resume,
+      available: typeof available === "boolean" ? available : foundArr.available,
+    };
+    if (typeof active === "boolean") {
+      payload.active = active;
+    }
+
     const { error: updateError } = await supabase
       .from("professionals")
-      .update({
-        name,
-        specialty,
-        email,
-        phone,
-        photo,
-        resume,
-        available: typeof available === "boolean" ? available : true,
-      })
+      .update(payload)
       .eq("id", id)
       .eq("clinic_id", clinicId);
-
     if (updateError) throw updateError;
 
-    // Busca profissional atualizado
     const { data: updatedArr, error: fetchError } = await supabase
       .from("professionals")
       .select("*")
       .eq("id", id)
       .maybeSingle();
-
     if (fetchError) throw fetchError;
 
     res.json(updatedArr);
@@ -117,7 +115,35 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETAR profissional por ID (apenas se for da clínica)
+// (Opcional) Reativar via endpoint explícito
+router.post("/:id/reactivate", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const clinicId = req.body.clinic_id || req.body.clinicId;
+    if (isNaN(id) || !clinicId) {
+      return res.status(400).json({ error: "ID e clinicId são obrigatórios" });
+    }
+    const { error: updError } = await supabase
+      .from("professionals")
+      .update({ active: true })
+      .eq("id", id)
+      .eq("clinic_id", clinicId);
+    if (updError) throw updError;
+    const { data: updated, error: fetchError } = await supabase
+      .from("professionals")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Erro ao reativar profissional" });
+  }
+});
+
+// DELETE (pode deixar para casos extremos ou não usar no front)
+// Mantido sem alterações; o front simplesmente deixa de chamar.
 router.delete("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -129,7 +155,6 @@ router.delete("/:id", async (req, res) => {
       return res.status(400).json({ error: "clinicId é obrigatório" });
     }
 
-    // Verifica se existe
     const { data: foundArr, error: findError } = await supabase
       .from("professionals")
       .select("id")
@@ -146,7 +171,6 @@ router.delete("/:id", async (req, res) => {
       .delete()
       .eq("id", id)
       .eq("clinic_id", clinicId);
-
     if (deleteError) throw deleteError;
     res.status(204).send();
   } catch (error) {
