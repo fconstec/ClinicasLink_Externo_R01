@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useCallback } from "react";
 import ProfessionalsManager from "@/components/ClinicAdminPanel_Managers/ProfessionalsManager";
 import ProfessionalFormModal from "@/components/modals/ProfessionalFormModal";
-import type {
-  Professional,
-  NewProfessionalData,
-} from "@/components/ClinicAdminPanel_Managers/types";
+import type { Professional, NewProfessionalData } from "@/components/ClinicAdminPanel_Managers/types";
 import {
   addProfessional,
   updateProfessional,
-  deleteProfessional,
   fetchProfessionals,
+  reactivateProfessional
 } from "@/api/professionalsApi";
 import {
   normalizeProfessional,
-  normalizeProfessionals,
-} from "../../utils/normalizeProfessional";
+  normalizeProfessionals
+} from "@/utils/normalizeProfessional";
 
 interface ProfessionalsTabProps {
   professionals: Professional[];
@@ -22,25 +19,18 @@ interface ProfessionalsTabProps {
   reloadProfessionals: () => Promise<void>;
 }
 
-// Helper para evitar uso direto de confirm (alguns linters reclamam)
-function safeConfirm(message: string): boolean {
-  return typeof window !== "undefined" ? window.confirm(message) : true;
-}
-
 const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   professionals: initialProfessionals,
   clinicId,
   reloadProfessionals,
 }) => {
-  const [professionals, setProfessionals] = useState<
-    (Professional & { photoUrl?: string })[]
-  >([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isProfessionalModalOpen, setIsProfessionalModalOpen] = useState(false);
-  const [editingProfessional, setEditingProfessional] =
-    useState<Professional | null>(null);
+  const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Normaliza lista inicial (incluir inativos, depende de como veio do pai)
   useEffect(() => {
     setProfessionals(normalizeProfessionals(initialProfessionals || []));
   }, [initialProfessionals]);
@@ -48,7 +38,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
   const localReload = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchProfessionals(clinicId);
+      const data = await fetchProfessionals(clinicId, { includeInactive: true });
       setProfessionals(normalizeProfessionals(data));
     } catch (e: any) {
       console.error("[ProfessionalsTab] Erro reload:", e);
@@ -80,6 +70,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     setLoading(true);
     try {
       if ("id" in data && data.id != null && editingProfessional) {
+        // Editar
         const updated = await updateProfessional(Number(data.id), clinicId, {
           name: (data.name ?? "").trim(),
           specialty: (data.specialty ?? "").trim(),
@@ -91,10 +82,9 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
           clinicId,
         });
         const norm = normalizeProfessional(updated);
-        setProfessionals(prev =>
-          prev.map(p => (p.id === norm.id ? { ...p, ...norm } : p))
-        );
+        setProfessionals(prev => prev.map(p => p.id === norm.id ? { ...p, ...norm } : p));
       } else {
+        // Adicionar
         const payload: NewProfessionalData = {
           name: (data.name ?? "").trim(),
           specialty: (data.specialty ?? "").trim(),
@@ -122,17 +112,44 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     }
   }
 
-  async function handleDeleteProfessional(id: number) {
-    // Substituído confirm por safeConfirm (usa window.confirm internamente)
-    if (!safeConfirm("Confirmar exclusão do profissional?")) return;
+  async function handleDeactivateProfessional(id: number) {
+    if (!window.confirm("Desativar este profissional? Agendamentos antigos serão mantidos.")) return;
     setError(null);
     setLoading(true);
     try {
-      await deleteProfessional(id, String(clinicId));
-      setProfessionals(prev => prev.filter(p => p.id !== id));
-    } catch (err: any) {
-      console.error("[ProfessionalsTab] Erro ao excluir:", err);
-      setError(err.message || "Erro ao excluir profissional.");
+      const prof = professionals.find(p => p.id === id);
+      if (!prof) return;
+      const updated = await updateProfessional(id, clinicId, {
+        name: prof.name,
+        specialty: prof.specialty,
+        email: prof.email,
+        phone: prof.phone,
+        photo: prof.photo,
+        resume: prof.resume,
+        available: prof.available,
+        active: false,
+        clinicId,
+      });
+      const norm = normalizeProfessional(updated);
+      setProfessionals(prev => prev.map(p => p.id === id ? { ...p, ...norm } : p));
+    } catch (e: any) {
+      console.error("[ProfessionalsTab] Erro ao desativar:", e);
+      setError(e.message || "Erro ao desativar profissional.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReactivateProfessional(id: number) {
+    setError(null);
+    setLoading(true);
+    try {
+      const updated = await reactivateProfessional(id, clinicId);
+      const norm = normalizeProfessional(updated);
+      setProfessionals(prev => prev.map(p => p.id === id ? { ...p, ...norm } : p));
+    } catch (e: any) {
+      console.error("[ProfessionalsTab] Erro ao reativar:", e);
+      setError(e.message || "Erro ao reativar profissional.");
     } finally {
       setLoading(false);
     }
@@ -144,7 +161,8 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
         professionals={professionals}
         onAdd={openAddModal}
         onEdit={openEditModal}
-        onDelete={handleDeleteProfessional}
+        onDelete={handleDeactivateProfessional}
+        reactivateProfessional={handleReactivateProfessional}
         loading={loading}
         error={error}
         clinicId={clinicId}
@@ -163,7 +181,7 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
       <div className="mt-4 flex gap-3">
         <button
           type="button"
-          onClick={localReload}
+            onClick={localReload}
           className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
           disabled={loading}
         >

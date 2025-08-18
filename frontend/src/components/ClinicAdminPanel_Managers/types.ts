@@ -8,12 +8,24 @@ export interface Professional {
   specialty: string;
   photo: string;
   available: boolean;
-  clinic_id?: number;  // snake_case do backend
-  clinicId?: number;   // normalizado
+  clinic_id?: number;   // snake_case (backend cru)
+  clinicId?: number;    // normalizado
   email?: string;
   phone?: string;
   resume?: string;
   color?: string;
+
+  active?: boolean;           // soft delete: false = desativado
+  deleted_at?: string | null; // reservado se quiser implementar depois
+  created_at?: string;
+  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
+
+  // Derivados (frontend only)
+  isInactive?: boolean;
+  photoUrl?: string;
+  displayName?: string;
 }
 
 export interface NewProfessionalData {
@@ -27,6 +39,10 @@ export interface NewProfessionalData {
   resume?: string;
   color?: string;
 }
+
+export type UpdateProfessionalData = Partial<
+  Omit<Professional, "id" | "clinic_id" | "isInactive" | "displayName" | "photoUrl">
+> & { id: number; clinicId?: number };
 
 // =============================================================
 // AGENDAMENTOS
@@ -56,6 +72,9 @@ export interface RawAppointment {
   professionalName?: string;
   professional_name?: string;
   professional?: string;
+
+  professionalSpecialty?: string;
+  professional_specialty?: string;
 
   date?: string;
   time?: string;
@@ -93,20 +112,20 @@ export interface Appointment {
 
   professionalId: number;
   professionalName?: string;
+  professionalSpecialty?: string;
 
-  date: string;     // YYYY-MM-DD
-  time: string;     // HH:MM
-  endTime?: string; // HH:MM
+  date: string;
+  time: string;
+  endTime?: string;
 
   status: AppointmentStatus;
   notes?: string;
 
   createdAt?: string;
   updatedAt?: string;
-
   startUTC?: string;
   endUTC?: string;
-  utcDateTime?: Date; // derivado
+  utcDateTime?: Date;
 }
 
 export interface NewAppointmentData {
@@ -114,6 +133,8 @@ export interface NewAppointmentData {
   patientName?: string;
   patientPhone?: string;
   professionalId: number;
+  professionalName?: string;          // snapshot
+  professionalSpecialty?: string;     // snapshot
   serviceId?: number;
   serviceName?: string;
   date: string;
@@ -146,11 +167,6 @@ export type AppointmentMapper = (raw: RawAppointment) => Appointment;
 // PROCEDIMENTOS
 // =============================================================
 
-/**
- * Imagem de procedimento persistida.
- * Várias chaves possíveis porque o backend pode variar.
- * A função resolveImageUrl cuidará de montar uma URL exibível.
- */
 export interface ProcedureImage {
   id: number;
   url?: string;
@@ -197,25 +213,13 @@ export interface Patient {
   phone: string;
   email: string;
   address: string;
-
-  /**
-   * Valor bruto da foto armazenado no banco (nome simples, caminho relativo ou URL).
-   * Não altere esse campo antes de enviar ao backend.
-   */
   photo?: string | null;
-
   images?: string[];
   procedures?: Procedure[];
   evolutions?: Evolution[];
   anamnesis?: string;
   tcle?: string;
   appointments?: Appointment[];
-
-  /**
-   * Campo DERIVADO (frontend) para exibição em <img>.
-   * Preenchido pela normalização (ex.: resolveImageUrl(photo)).
-   * Nunca enviar ao backend.
-   */
   photoUrl?: string;
 }
 
@@ -247,13 +251,12 @@ export interface StockItem {
   validity?: string;
   clinicId?: number;
 }
-
 export type NewStockItemData = Omit<StockItem, "id" | "updatedAt"> & {
   updatedAt?: string;
 };
 
 // =============================================================
-// INFORMAÇÕES INSTITUCIONAIS DA CLÍNICA
+// INFORMAÇÕES INSTITUCIONAIS
 // =============================================================
 
 export interface ClinicInfoData {

@@ -1,37 +1,64 @@
 import React from 'react';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { Professional } from './types';
-// import { resolveImageUrl } from '@/utils/resolveImage'; // caso queira fallback dinâmico
 
 export interface ProfessionalsManagerProps {
   professionals: Professional[];
-  onAdd: () => void;                 // abre modal de criação
+  onAdd: () => void;                               // abre modal de criação
   onEdit: (professional: Professional) => void;
-  onDelete: (id: number) => void;
+  /**
+   * onDelete agora significa "Desativar" (soft delete).
+   * Mantido o nome para retrocompatibilidade.
+   */
+  onDelete: (id: number) => void | Promise<void>;
+  /**
+   * Reativa profissional inativo (active=false).
+   */
+  reactivateProfessional?: (id: number) => void | Promise<void>;
   loading?: boolean;
   error?: string | null;
   clinicId: number;
+  /**
+   * Se true, mostra também os inativos (normalmente você já envia a lista completa).
+   * Se quiser filtrar antes, pode usar isto.
+   */
+  showInactive?: boolean;
+  /**
+   * Ordenar ativos primeiro (default true).
+   */
+  sortActiveFirst?: boolean;
 }
 
 const addButtonClasses =
   "bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-4 py-2 rounded text-sm font-medium transition-colors";
+
+function getPhotoSrc(p: Professional): string | undefined {
+  const src = (p as any).photoUrl || p.photo;
+  return src || undefined;
+}
 
 const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
   professionals,
   onAdd,
   onEdit,
   onDelete,
+  reactivateProfessional,
   loading,
   error,
   clinicId,
+  showInactive = true,
+  sortActiveFirst = true,
 }) => {
-  function getPhotoSrc(p: Professional): string | undefined {
-    // Prioridade: photoUrl derivada → photo original
-    const src = (p as any).photoUrl || p.photo;
-    // Se quiser forçar normalização aqui (não recomendo duplicar lógica):
-    // return resolveImageUrl(src);
-    return src || undefined;
-  }
+  // Filtra se solicitado
+  const visible = showInactive
+    ? professionals
+    : professionals.filter(p => p.active !== false);
+
+  const ordered = sortActiveFirst
+    ? [...visible].sort(
+        (a, b) => Number(b.active !== false) - Number(a.active !== false)
+      )
+    : visible;
 
   return (
     <div className="space-y-6">
@@ -55,36 +82,42 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
         </h2>
         <button
           type="button"
-            onClick={onAdd}
+          onClick={onAdd}
           className={addButtonClasses}
           data-action="add-professional"
+          disabled={loading}
         >
           <Plus className="h-4 w-4 mr-2" />
           Adicionar Profissional
         </button>
       </div>
 
-      {professionals.length === 0 && !loading ? (
+      {ordered.length === 0 && !loading ? (
         <p className="text-center text-gray-400 py-8 text-sm">
           Nenhum profissional cadastrado.
         </p>
       ) : (
         <div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-          data-professionals-count={professionals.length}
+          data-professionals-count={ordered.length}
         >
-          {professionals.map((professional) => {
+          {ordered.map((professional) => {
             const photoSrc = getPhotoSrc(professional);
             const numericId =
               typeof professional.id === 'string'
                 ? parseInt(professional.id as any, 10)
                 : professional.id;
+            const isInactive = professional.active === false;
 
             return (
               <div
-                key={numericId} // garante chave estável numérica
+                key={numericId}
                 data-prof-id={numericId}
-                className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden flex flex-col group"
+                className={`relative bg-white rounded-xl shadow-md border overflow-hidden flex flex-col group transition ${
+                  isInactive
+                    ? 'opacity-70 bg-gray-50 border-gray-200'
+                    : 'border-gray-100'
+                }`}
               >
                 <div className="p-5 flex-grow">
                   <div className="flex items-center mb-4">
@@ -94,7 +127,6 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
                         alt={professional.name}
                         className="w-16 h-16 rounded-full object-cover mr-4 border-2 border-gray-200"
                         onError={(e) => {
-                          // se a imagem quebrar, esconde e mostra fallback
                           const el = e.currentTarget;
                           el.style.display = 'none';
                           const parent = el.parentElement;
@@ -118,16 +150,26 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3
                           className="text-lg font-semibold text-gray-800 truncate"
                           title={professional.name}
                         >
                           {professional.name}
+                          {isInactive && (
+                            <span className="ml-2 text-xs font-normal text-gray-500">
+                              (Inativo)
+                            </span>
+                          )}
                         </h3>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200">
                           ID:{numericId}
                         </span>
+                        {isInactive && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-gray-300 text-gray-700 uppercase tracking-wide">
+                            Inativo
+                          </span>
+                        )}
                       </div>
                       <p
                         className="text-sm text-gray-600 truncate"
@@ -159,16 +201,24 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
                     </p>
                   )}
 
-                  <span
-                    className={`mt-2 inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                      professional.available
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}
-                  >
-                    {professional.available ? 'Disponível' : 'Indisponível'}
-                  </span>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <span
+                      className={`inline-block px-2 py-1 text-[11px] font-medium rounded-full ${
+                        professional.available
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {professional.available ? 'Disponível' : 'Indisponível'}
+                    </span>
+                    {isInactive && (
+                      <span className="inline-block px-2 py-1 text-[11px] font-medium rounded-full bg-gray-200 text-gray-700">
+                        Desativado
+                      </span>
+                    )}
+                  </div>
                 </div>
+
                 <div className="bg-gray-50 p-3 border-t border-gray-200">
                   <div className="flex justify-end space-x-1">
                     <button
@@ -178,19 +228,38 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
                       title="Editar Profissional"
                       data-action="edit-professional"
                       data-prof-id={numericId}
+                      disabled={loading}
                     >
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(Number(numericId))}
-                      className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
-                      title="Excluir Profissional"
-                      data-action="delete-professional"
-                      data-prof-id={numericId}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+
+                    {isInactive ? (
+                      reactivateProfessional && (
+                        <button
+                          type="button"
+                          onClick={() => reactivateProfessional(numericId)}
+                          className="p-2 rounded hover:bg-green-50 text-green-600 hover:text-green-800 transition"
+                          title="Reativar Profissional"
+                          data-action="reactivate-professional"
+                          data-prof-id={numericId}
+                          disabled={loading}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onDelete(numericId)}
+                        className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition"
+                        title="Desativar Profissional"
+                        data-action="deactivate-professional"
+                        data-prof-id={numericId}
+                        disabled={loading}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
