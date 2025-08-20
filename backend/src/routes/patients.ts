@@ -1,5 +1,8 @@
 import { Router } from "express";
-import * as uploadMiddleware from "../middleware/uploadMiddleware";
+import {
+  uploadPatientPhoto,
+  uploadProcedureImage
+} from "../middleware/uploadMiddleware";
 import * as patientController from "../controllers/patientController";
 import * as anamneseController from "../controllers/anamneseController";
 import * as patientProceduresController from "../controllers/patientProceduresController";
@@ -15,24 +18,33 @@ router.get("/", patientController.getPatients);
 router.get("/:id", patientController.getPatientById);
 
 // Upload de foto do paciente (rota separada, útil para frontend react-dropzone)
-// Now uses multer middleware and controller.uploadPatientPhoto which forwards file to Supabase.
 router.post(
   "/upload-photo",
-  uploadMiddleware.uploadPatientPhoto,
-  patientController.uploadPatientPhoto
+  (req, res) => {
+    uploadPatientPhoto(req, res, function (err) {
+      if (err) {
+        return res.status(400).json({ error: "Erro no upload: " + err.message });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "Nenhum arquivo enviado." });
+      }
+      const fileUrl = `/uploads/${req.file.filename}`;
+      res.json({ url: fileUrl, filename: req.file.filename });
+    });
+  }
 );
 
 // Criar paciente (pode receber foto via multipart se necessário)
 router.post(
   "/",
-  uploadMiddleware.uploadPatientPhoto,
+  uploadPatientPhoto,
   patientController.createPatient
 );
 
 // Atualizar paciente (pode receber foto via multipart se necessário)
 router.put(
   "/:id",
-  uploadMiddleware.uploadPatientPhoto,
+  uploadPatientPhoto,
   patientController.updatePatient
 );
 
@@ -66,7 +78,7 @@ router.delete("/procedures/:procedure_id", patientProceduresController.deletePro
 // Upload de imagem individual para procedimento (FormData)
 router.post(
   "/:patientId/procedures/:procedureId/upload-image",
-  uploadMiddleware.uploadProcedureImage,
+  uploadProcedureImage,
   patientProceduresController.uploadProcedureImage
 );
 
