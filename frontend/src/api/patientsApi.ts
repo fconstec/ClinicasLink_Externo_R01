@@ -62,6 +62,37 @@ type AddOrUpdatePayload = {
   clinicId: string;
 };
 
+// Helper: normaliza valores de `photo` antes de enviar ao backend.
+// - converte Supabase public URL em path relativo (ex: "patients/123/x.jpg")
+// - remove API_BASE_URL prefix (ex: "/uploads/..." -> "uploads/...")
+// - se for string vazia retorna undefined (para não sobrescrever no backend)
+function normalizePhotoForSave(photo?: string | null): string | undefined {
+  if (photo === undefined || photo === null) return undefined;
+  const p = String(photo).trim();
+  if (!p) return undefined;
+
+  // 1) Detecta Supabase public URL com padrão /storage/v1/object/public/{bucket}/{path}
+  const supabaseMatch = p.match(/\/storage\/v1\/object\/public\/[^\/]+\/(.+)$/i);
+  if (supabaseMatch && supabaseMatch[1]) {
+    return decodeURIComponent(supabaseMatch[1]);
+  }
+
+  // 2) Se começa com API_BASE_URL, remover o prefixo para obter o path relativo
+  if (API_BASE_URL && p.startsWith(API_BASE_URL)) {
+    const stripped = p.replace(new RegExp('^' + API_BASE_URL.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '/?'), "");
+    return stripped || undefined;
+  }
+
+  // 3) Se for URL (qualquer host) -> extrair a parte após hostname
+  const urlMatch = p.match(/^https?:\/\/[^\/]+\/(.+)$/i);
+  if (urlMatch && urlMatch[1]) {
+    return decodeURIComponent(urlMatch[1]);
+  }
+
+  // 4) Caso já seja um path relativo aceitável (ex: avatars/patients/...), retorna tal como está
+  return p;
+}
+
 export async function fetchPatients(clinicId?: string, search?: string, signal?: AbortSignal): Promise<Patient[]> {
   const base = await resolvePatientsBase();
   const url = new URL(norm(`${API_BASE_URL}${base}`));
@@ -81,11 +112,20 @@ export async function fetchPatients(clinicId?: string, search?: string, signal?:
 }
 
 export async function addPatient(payload: AddOrUpdatePayload): Promise<Patient> {
+  // normaliza photo antes de enviar
+  const out = { ...payload } as any;
+  const normalized = normalizePhotoForSave(out.photo);
+  if (normalized === undefined) {
+    delete out.photo;
+  } else {
+    out.photo = normalized;
+  }
+
   const base = await resolvePatientsBase();
   const res = await fetch(norm(`${API_BASE_URL}${base}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(out),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
@@ -95,11 +135,20 @@ export async function addPatient(payload: AddOrUpdatePayload): Promise<Patient> 
 }
 
 export async function updatePatient(id: number, payload: AddOrUpdatePayload): Promise<Patient> {
+  // normaliza photo antes de enviar; se undefined -> remove para não sobrescrever
+  const out = { ...payload } as any;
+  const normalized = normalizePhotoForSave(out.photo);
+  if (normalized === undefined) {
+    delete out.photo;
+  } else {
+    out.photo = normalized;
+  }
+
   const base = await resolvePatientsBase();
   const res = await fetch(norm(`${API_BASE_URL}${base}/${id}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(out),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
