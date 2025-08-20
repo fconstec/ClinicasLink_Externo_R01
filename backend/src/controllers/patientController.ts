@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabase } from '../supabaseClient';
 import fs from 'fs';
 import path from 'path';
+import mime from 'mime-types';
 
 interface Patient {
   id?: number;
@@ -31,46 +32,63 @@ interface UploadResult {
 
 /**
  * Helper: upload file saved locally by multer to Supabase Storage and remove local file.
- * Returns object with path (relative to bucket, may include subfolders) and publicUrl.
+ * Uses Buffer read (fs.readFileSync) to ensure compatibility with supabase-js in Node.
  */
 async function uploadLocalFileToSupabase(localFilePath: string, originalName: string | undefined, patientId?: string | number, bucket = 'avatars'): Promise<UploadResult> {
   if (!localFilePath || !fs.existsSync(localFilePath)) {
     throw new Error('Local file not found for upload');
   }
 
+  // sanitize filename
   const fileNameSafe = (originalName || path.basename(localFilePath)).replace(/\s+/g, '_');
   const remoteFilePath = `${patientId ?? 'unknown'}/${Date.now()}_${fileNameSafe}`;
 
-  // Use a read stream so we don't load the whole file into memory
-  const fileStream = fs.createReadStream(localFilePath);
-
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .upload(remoteFilePath, fileStream, {
-      upsert: true,
-      contentType: undefined, // let supabase infer or you can set a value here
-    });
-
-  // remove local file regardless of result (to avoid disk growth), but only if it exists
+  // Read file into Buffer (more compatible with supabase-js in Node)
+  let fileBuffer: Buffer;
   try {
-    if (fs.existsSync(localFilePath)) {
-      fs.unlinkSync(localFilePath);
-    }
+    fileBuffer = fs.readFileSync(localFilePath);
   } catch (err) {
-    console.warn('Failed to remove local uploaded file:', err);
+    throw new Error(`Failed to read local file: ${(err as Error).message}`);
   }
 
-  if (error) {
-    throw error;
+  // Detect content type
+  const contentType = mime.lookup(fileNameSafe) || undefined;
+
+  // Perform upload
+  try {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(remoteFilePath, fileBuffer, {
+        upsert: true,
+        contentType,
+      });
+
+    // Remove local file after uploading (best-effort)
+    try {
+      if (fs.existsSync(localFilePath)) {
+        fs.unlinkSync(localFilePath);
+      }
+    } catch (unlinkErr) {
+      console.warn('Failed to remove local uploaded file:', (unlinkErr as Error).message);
+    }
+
+    if (error) {
+      // Normalize error message
+      const errMsg = (error.message || JSON.stringify(error));
+      throw new Error(`Supabase storage upload error: ${errMsg}`);
+    }
+
+    const storedPath = data?.path ?? remoteFilePath;
+    const storedPathNoBucket = storedPath.replace(new RegExp(`^${bucket}\\/`), '');
+    const supabaseUrl = process.env.SUPABASE_URL ?? '';
+    const publicUrl = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${encodeURIComponent(storedPathNoBucket)}`;
+
+    return { path: `${bucket}/${storedPathNoBucket}`, publicUrl, filename: path.basename(storedPathNoBucket) };
+  } catch (err) {
+    // If upload failed, don't delete the local file (we already attempted deletion after success),
+    // just rethrow a clear error message for logs.
+    throw new Error(`uploadLocalFileToSupabase failed: ${(err as Error).message}`);
   }
-
-  // data.path is the path in the bucket (usually same as remoteFilePath)
-  const storedPath = data?.path ?? remoteFilePath;
-  const storedPathNoBucket = storedPath.replace(new RegExp(`^${bucket}\\/`), '');
-  const supabaseUrl = process.env.SUPABASE_URL ?? '';
-  const publicUrl = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${encodeURIComponent(storedPathNoBucket)}`;
-
-  return { path: `${bucket}/${storedPathNoBucket}`, publicUrl, filename: path.basename(storedPathNoBucket) };
 }
 
 /* -------------------------
@@ -151,7 +169,7 @@ export const updatePatientProfile = async (
 };
 
 /* -------------------------
-   Standard patient CRUD
+   Standard patient CRUD (create/get/update/delete)
    ------------------------- */
 
 export const getPatients = async (
@@ -446,16 +464,21 @@ export const deletePatient = async (
    Upload route handler (used by /upload-photo route)
    ------------------------- */
 
-/**
- * Handler de upload rápido: aceita multipart (campo 'photo'), faz upload para Supabase,
- * remove o arquivo local e retorna JSON { path, publicUrl, filename }.
- */
 export const uploadPatientPhoto = async (req: Request, res: Response) => {
   try {
     // multer middleware should have populated req.file
     if (!(req as any).file) {
       return res.status(400).json({ error: "Nenhum arquivo enviado." });
     }
+
+    // Log básico para debugging: arquivo recebido e environment vars
+    console.log('uploadPatientPhoto - req.file:', {
+      originalname: (req as any).file.originalname,
+      path: (req as any).file.path,
+      size: (req as any).file.size,
+    });
+    console.log('SUPABASE_URL present:', !!process.env.SUPABASE_URL);
+    console.log('SUPABASE key present:', !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY));
 
     // optional patient id to build path
     const patientId = req.body.patientId ?? req.body.id ?? 'unknown';
@@ -471,6 +494,7 @@ export const uploadPatientPhoto = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Erro no uploadPatientPhoto:', error);
-    return res.status(500).json({ error: 'Falha no upload' });
+    // return error details in dev; in production you may hide detailed messages
+    return res.status(500).json({ error: 'Falha no upload', details: (error as Error).message });
   }
 };
