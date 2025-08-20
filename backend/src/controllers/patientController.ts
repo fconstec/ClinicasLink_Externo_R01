@@ -1,10 +1,12 @@
 import { Request, Response } from 'express';
 import { supabase } from '../supabaseClient';
+import fs from 'fs';
+import path from 'path';
 
 interface Patient {
-  id: number;
-  name: string;
-  email: string;
+  id?: number;
+  name?: string;
+  email?: string;
   phone?: string;
   birthdate?: string;
   address?: string;
@@ -12,7 +14,7 @@ interface Patient {
   state?: string;
   zipcode?: string;
   photo?: string | null;
-  images?: string; // se for JSON/array, ajuste conforme necessário
+  images?: string;
   anamnesis?: string;
   tcle?: string;
   procedures?: string;
@@ -21,14 +23,59 @@ interface Patient {
   updated_at?: string | Date;
 }
 
-interface PatientImage {
-  id: number;
-  patient_id: number;
-  image_url: string;
-  uploaded_at: string;
+interface UploadResult {
+  path: string;
+  publicUrl: string;
+  filename?: string;
 }
 
-// --- NOVAS ROTAS DE PERFIL ---
+/**
+ * Helper: upload file saved locally by multer to Supabase Storage and remove local file.
+ * Returns object with path (relative to bucket, may include subfolders) and publicUrl.
+ */
+async function uploadLocalFileToSupabase(localFilePath: string, originalName: string | undefined, patientId?: string | number, bucket = 'avatars'): Promise<UploadResult> {
+  if (!localFilePath || !fs.existsSync(localFilePath)) {
+    throw new Error('Local file not found for upload');
+  }
+
+  const fileNameSafe = (originalName || path.basename(localFilePath)).replace(/\s+/g, '_');
+  const remoteFilePath = `${patientId ?? 'unknown'}/${Date.now()}_${fileNameSafe}`;
+
+  // Use a read stream so we don't load the whole file into memory
+  const fileStream = fs.createReadStream(localFilePath);
+
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(remoteFilePath, fileStream, {
+      upsert: true,
+      contentType: undefined, // let supabase infer or you can set a value here
+    });
+
+  // remove local file regardless of result (to avoid disk growth), but only if it exists
+  try {
+    if (fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+  } catch (err) {
+    console.warn('Failed to remove local uploaded file:', err);
+  }
+
+  if (error) {
+    throw error;
+  }
+
+  // data.path is the path in the bucket (usually same as remoteFilePath)
+  const storedPath = data?.path ?? remoteFilePath;
+  const storedPathNoBucket = storedPath.replace(new RegExp(`^${bucket}\\/`), '');
+  const supabaseUrl = process.env.SUPABASE_URL ?? '';
+  const publicUrl = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${encodeURIComponent(storedPathNoBucket)}`;
+
+  return { path: `${bucket}/${storedPathNoBucket}`, publicUrl, filename: path.basename(storedPathNoBucket) };
+}
+
+/* -------------------------
+   Profile helpers + routes
+   ------------------------- */
 
 export const getPatientProfile = async (
   req: Request<{}, {}, {}, { email?: string }>,
@@ -103,7 +150,9 @@ export const updatePatientProfile = async (
   }
 };
 
-// --- ROTAS PADRÃO ---
+/* -------------------------
+   Standard patient CRUD
+   ------------------------- */
 
 export const getPatients = async (
   req: Request<{}, {}, {}, { clinicId?: string; search?: string }>,
@@ -170,7 +219,7 @@ export const getPatientById = async (
       return res.status(404).json({ message: 'Paciente não encontrado.' });
     }
 
-    let images: PatientImage[] = [];
+    let images: any[] = [];
     try {
       const { data: imagesData } = await supabase
         .from('patient_images')
@@ -223,13 +272,15 @@ export const createPatient = async (req: Request, res: Response) => {
   }
 
   let photo: string | null = null;
-  if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
-  } else if (req.body.photo) {
-    photo = req.body.photo;
-  }
-
   try {
+    // If multipart file was sent, upload it to Supabase and use returned path
+    if ((req as any).file) {
+      const uploadRes = await uploadLocalFileToSupabase((req as any).file.path, (req as any).file.originalname, req.body.patientId ?? req.body.id ?? 'new');
+      photo = uploadRes.path; // e.g. "avatars/<patientId>/xxxx.jpg"
+    } else if (req.body.photo) {
+      photo = req.body.photo;
+    }
+
     const { data: patients, error } = await supabase
       .from('patients')
       .insert([
@@ -280,9 +331,30 @@ export const updatePatient = async (
   }
 
   const { name, email, phone, birthdate, address, city, state, zipcode } = req.body;
-  let photo = req.body.photo || null;
-  if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
+
+  // --- CORREÇÃO: só definir `photo` se o cliente realmente enviou um valor ou se há um arquivo multipart.
+  // Não transforme ausência em null (evita sobrescrever o valor já no DB).
+  let photo: string | undefined = undefined;
+
+  try {
+    if ((req as any).file) {
+      // If a multipart file was sent, upload to Supabase and use returned path
+      const uploadRes = await uploadLocalFileToSupabase((req as any).file.path, (req as any).file.originalname, id);
+      photo = uploadRes.path; // e.g. "avatars/<id>/xxxx.jpg"
+    } else if (Object.prototype.hasOwnProperty.call(req.body, "photo")) {
+      // client explicitly sent a photo property
+      const raw = req.body.photo;
+      if (raw !== null && String(raw).trim() !== "") {
+        photo = raw;
+      } else {
+        // omit if empty or null -> do not overwrite existing db value
+        photo = undefined;
+      }
+    }
+  } catch (err) {
+    console.error('Erro no upload para Supabase (update):', err);
+    // continue: we will not overwrite photo if upload fails
+    photo = undefined;
   }
 
   const updatedFields: Partial<Patient> = {
@@ -294,7 +366,7 @@ export const updatePatient = async (
     city,
     state,
     zipcode,
-    photo,
+    ...(photo !== undefined ? { photo } : {}),
     updated_at: new Date().toISOString(),
   };
   Object.keys(updatedFields).forEach(key => {
@@ -344,7 +416,6 @@ export const deletePatient = async (
       return res.status(400).json({ message: "clinicId inválido" });
     }
   }
-  
 
   if (isNaN(id)) {
     return res.status(400).json({ message: "ID inválido" });
@@ -368,5 +439,38 @@ export const deletePatient = async (
   } catch (error) {
     console.error(`Erro ao deletar paciente ${id}${clinicId ? ' da clínica ' + clinicId : ''}:`, error);
     return res.status(500).json({ message: 'Erro interno ao deletar paciente.' });
+  }
+};
+
+/* -------------------------
+   Upload route handler (used by /upload-photo route)
+   ------------------------- */
+
+/**
+ * Handler de upload rápido: aceita multipart (campo 'photo'), faz upload para Supabase,
+ * remove o arquivo local e retorna JSON { path, publicUrl, filename }.
+ */
+export const uploadPatientPhoto = async (req: Request, res: Response) => {
+  try {
+    // multer middleware should have populated req.file
+    if (!(req as any).file) {
+      return res.status(400).json({ error: "Nenhum arquivo enviado." });
+    }
+
+    // optional patient id to build path
+    const patientId = req.body.patientId ?? req.body.id ?? 'unknown';
+    const uploadRes = await uploadLocalFileToSupabase((req as any).file.path, (req as any).file.originalname, patientId);
+
+    // optionally, you could also update the patient row here if you want immediate DB update:
+    // await supabase.from('patients').update({ photo: uploadRes.path }).eq('id', patientId);
+
+    return res.json({
+      path: uploadRes.path,
+      publicUrl: uploadRes.publicUrl,
+      filename: uploadRes.filename,
+    });
+  } catch (error) {
+    console.error('Erro no uploadPatientPhoto:', error);
+    return res.status(500).json({ error: 'Falha no upload' });
   }
 };
