@@ -3,33 +3,46 @@ import { API_BASE_URL } from "./apiBase";
 let detectedPrefix: "" | "/api" | null = null;
 let pending: Promise<"" | "/api"> | null = null;
 
+/**
+ * Lista de caminhos candidatos usados para detectar se o backend está servindo sob /api ou na raiz.
+ * Adicionado 'appointments' para cobrir cenários onde somente esse endpoint esteja disponível.
+ */
 const CANDIDATE_TEST_PATHS = [
   "patients",
   "services",
   "stock",
   "professionals",
-  "appointments",
+  "appointments", // adicionado
 ];
 
 async function probe(path: string): Promise<"api" | "root" | "none"> {
   const base = API_BASE_URL.replace(/\/+$/, "");
+  // Testa /api/path
   try {
     let res = await fetch(`${base}/api/${path}`, { method: "HEAD" });
     if (res.status !== 404) return "api";
+    // fallback GET
     res = await fetch(`${base}/api/${path}`, { method: "GET" });
     if (res.status !== 404) return "api";
-  } catch { /* ignore */ }
-
+  } catch {
+    /* ignore */
+  }
+  // Testa root
   try {
     let res = await fetch(`${base}/${path}`, { method: "HEAD" });
     if (res.status !== 404) return "root";
     res = await fetch(`${base}/${path}`, { method: "GET" });
     if (res.status !== 404) return "root";
-  } catch { /* ignore */ }
-
+  } catch {
+    /* ignore */
+  }
   return "none";
 }
 
+/**
+ * Detecta se deve usar /api. Testa vários endpoints candidatos até achar um existente.
+ * Obs: se o backend tiver mistura (alguns endpoints em /api, outros na raiz) é possível forçar via opções de buildApiUrl.
+ */
 export async function detectApiPrefix(): Promise<"" | "/api"> {
   if (detectedPrefix) return detectedPrefix;
   if (pending) return pending;
@@ -43,6 +56,7 @@ export async function detectApiPrefix(): Promise<"" | "/api"> {
       }
       if (r === "root") {
         if (!detectedPrefix) detectedPrefix = "";
+        // continua testando para ver se algum exige /api
       }
     }
     return detectedPrefix ?? "";
@@ -54,10 +68,13 @@ export async function detectApiPrefix(): Promise<"" | "/api"> {
 }
 
 interface BuildOptions {
-  forceApi?: boolean;
-  noPrefix?: boolean;
+  forceApi?: boolean; // força usar /api
+  noPrefix?: boolean; // força não usar /api
 }
 
+/**
+ * Monta URL com prefixo (detectado ou forçado) + query params.
+ */
 export async function buildApiUrl(
   path: string,
   params?: Record<string, string | number | undefined | null>,
@@ -69,7 +86,7 @@ export async function buildApiUrl(
   if (options?.forceApi) prefix = "/api";
   if (options?.noPrefix) prefix = "";
 
-  const clean = String(path || "").replace(/^\/+/, "");
+  const clean = path.replace(/^\/+/, "");
   const url = new URL(`${base}${prefix}${prefix ? "/" : "/"}${clean}`);
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
