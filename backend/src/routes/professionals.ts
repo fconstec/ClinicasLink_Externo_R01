@@ -1,9 +1,94 @@
 import { Router } from "express";
 import { supabase } from "../supabaseClient";
+import multer, { FileFilterCallback } from "multer";
+import path from "path";
+import fs from "fs";
 
 const router = Router();
 
-// Listar (por padrão só ativos, usar ?showInactive=true para incluir todos)
+/* ============================
+   Uploads - armazenamento local
+   ============================ */
+
+const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
+
+function ensureUploadsDir() {
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      console.log("Uploads dir criado em:", UPLOADS_DIR);
+    }
+  } catch (e) {
+    console.error("Falha ao criar pasta de uploads:", e);
+  }
+}
+ensureUploadsDir();
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".png";
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, `photo-${unique}${ext}`);
+  },
+});
+
+function fileFilter(_req: any, file: Express.Multer.File, cb: FileFilterCallback) {
+  if (file.mimetype?.startsWith("image/")) return cb(null, true);
+  return cb(new Error("Formato de arquivo não suportado. Envie uma imagem."));
+}
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter,
+});
+
+async function saveDataUrlToFile(dataUrl: string): Promise<string> {
+  // data:image/png;base64,xxxx
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) throw new Error("Data URL inválida");
+  const mime = match[1];
+  const b64 = match[2];
+  const buf = Buffer.from(b64, "base64");
+
+  const ext = (() => {
+    const m = mime.split("/")[1]?.toLowerCase() || "png";
+    return m === "jpeg" ? "jpg" : m;
+  })();
+
+  const fname = `photo-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
+  const fpath = path.join(UPLOADS_DIR, fname);
+  await fs.promises.writeFile(fpath, buf);
+  return fname; // salvamos apenas o nome; o front resolve /uploads/<nome>
+}
+
+async function extractPhotoFilename(req: any, currentFilename?: string): Promise<string | undefined> {
+  // 1) Arquivo multipart (req.file)
+  if (req.file?.filename) return req.file.filename;
+
+  // 2) Campo "photo" como texto:
+  //    - se já for um nome/caminho existente, manter
+  //    - se for data URL (base64), salvar em disco e retornar novo nome
+  const photoField: unknown = req.body?.photo;
+  if (typeof photoField === "string" && photoField.trim()) {
+    const v = photoField.trim();
+    if (/^data:image\/.*;base64,/.test(v)) {
+      return await saveDataUrlToFile(v);
+    }
+    // Se já veio um nome/caminho, preservar (ex.: edição sem alterar foto)
+    return v;
+  }
+
+  // 3) Sem alteração de foto
+  return currentFilename;
+}
+
+/* ============================
+   Rotas
+   ============================ */
+
+// GET /api/professionals?clinicId=...&showInactive=true
 router.get("/", async (req, res) => {
   try {
     const { clinicId, showInactive } = req.query as { clinicId?: string; showInactive?: string };
@@ -23,29 +108,49 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Cadastrar
-router.post("/", async (req, res) => {
+// POST /api/professionals
+// Aceita:
+// - multipart/form-data com campo "photo" (arquivo)
+// - JSON com campo "photo" sendo data URL (base64) OU string nome do arquivo já salvo
+router.post("/", upload.single("photo"), async (req, res) => {
   try {
-    const { name, specialty, email, phone, photo, resume, available } = req.body;
     const clinicId = req.body.clinic_id || req.body.clinicId;
+    const name = req.body.name;
+    const specialty = req.body.specialty;
+    const email = req.body.email ?? null;
+    const phone = req.body.phone ?? null;
+    const resume = req.body.resume ?? null;
+    const available =
+      typeof req.body.available === "string"
+        ? req.body.available === "true"
+        : typeof req.body.available === "boolean"
+        ? req.body.available
+        : true;
+
     if (!name || !specialty || !clinicId) {
       return res.status(400).json({ error: "Nome, especialidade e clinicId são obrigatórios." });
     }
+
+    const filename = await extractPhotoFilename(req);
+
     const { data: insertedArr, error: insertError } = await supabase
       .from("professionals")
-      .insert([{
-        name,
-        specialty,
-        email,
-        phone,
-        photo,
-        resume,
-        clinic_id: clinicId,
-        available: typeof available === "boolean" ? available : true,
-        active: true
-      }])
+      .insert([
+        {
+          name,
+          specialty,
+          email,
+          phone,
+          photo: filename ?? null,
+          resume,
+          clinic_id: clinicId,
+          available,
+          active: true,
+        },
+      ])
       .select("*");
     if (insertError) throw insertError;
+
     const newProfessional = insertedArr && insertedArr.length > 0 ? insertedArr[0] : null;
     res.status(201).json(newProfessional);
   } catch (error) {
@@ -54,14 +159,32 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Atualizar (agora aceita active)
-router.put("/:id", async (req, res) => {
+// PUT /api/professionals/:id
+// Suporta multipart e JSON, incluindo troca de foto via arquivo ou base64
+router.put("/:id", upload.single("photo"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const {
-      name, specialty, email, phone, photo, resume, available, active
-    } = req.body;
     const clinicId = req.body.clinic_id || req.body.clinicId;
+
+    const name = req.body.name;
+    const specialty = req.body.specialty;
+    const email = req.body.email ?? null;
+    const phone = req.body.phone ?? null;
+    const resume = req.body.resume ?? null;
+
+    const available =
+      typeof req.body.available === "string"
+        ? req.body.available === "true"
+        : typeof req.body.available === "boolean"
+        ? req.body.available
+        : undefined;
+
+    const active =
+      typeof req.body.active === "string"
+        ? req.body.active === "true"
+        : typeof req.body.active === "boolean"
+        ? req.body.active
+        : undefined;
 
     if (isNaN(id)) {
       return res.status(400).json({ error: "ID inválido" });
@@ -70,29 +193,29 @@ router.put("/:id", async (req, res) => {
       return res.status(400).json({ error: "Nome, especialidade e clinicId são obrigatórios." });
     }
 
-    const { data: foundArr, error: findError } = await supabase
+    const { data: found, error: findError } = await supabase
       .from("professionals")
       .select("*")
       .eq("id", id)
       .eq("clinic_id", clinicId)
       .maybeSingle();
     if (findError) throw findError;
-    if (!foundArr) {
+    if (!found) {
       return res.status(404).json({ error: "Profissional não encontrado para esta clínica" });
     }
+
+    const filename = await extractPhotoFilename(req, found.photo || undefined);
 
     const payload: any = {
       name,
       specialty,
       email,
       phone,
-      photo,
       resume,
-      available: typeof available === "boolean" ? available : foundArr.available,
+      photo: filename ?? null,
     };
-    if (typeof active === "boolean") {
-      payload.active = active;
-    }
+    if (available !== undefined) payload.available = available;
+    if (active !== undefined) payload.active = active;
 
     const { error: updateError } = await supabase
       .from("professionals")
@@ -101,21 +224,21 @@ router.put("/:id", async (req, res) => {
       .eq("clinic_id", clinicId);
     if (updateError) throw updateError;
 
-    const { data: updatedArr, error: fetchError } = await supabase
+    const { data: updated, error: fetchError } = await supabase
       .from("professionals")
       .select("*")
       .eq("id", id)
       .maybeSingle();
     if (fetchError) throw fetchError;
 
-    res.json(updatedArr);
+    res.json(updated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erro ao atualizar profissional" });
   }
 });
 
-// (Opcional) Reativar via endpoint explícito
+// Reativar via endpoint explícito (opcional)
 router.post("/:id/reactivate", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -142,12 +265,11 @@ router.post("/:id/reactivate", async (req, res) => {
   }
 });
 
-// DELETE (pode deixar para casos extremos ou não usar no front)
-// Mantido sem alterações; o front simplesmente deixa de chamar.
+// DELETE (extremo)
 router.delete("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const clinicId = req.query.clinic_id || req.query.clinicId;
+    const clinicId = (req.query.clinic_id as string) || (req.query.clinicId as string);
     if (isNaN(id)) {
       return res.status(400).json({ error: "ID inválido" });
     }
@@ -155,14 +277,14 @@ router.delete("/:id", async (req, res) => {
       return res.status(400).json({ error: "clinicId é obrigatório" });
     }
 
-    const { data: foundArr, error: findError } = await supabase
+    const { data: found, error: findError } = await supabase
       .from("professionals")
       .select("id")
       .eq("id", id)
       .eq("clinic_id", clinicId)
       .maybeSingle();
     if (findError) throw findError;
-    if (!foundArr) {
+    if (!found) {
       return res.status(404).json({ error: "Profissional não encontrado para esta clínica" });
     }
 
