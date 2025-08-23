@@ -1,4 +1,5 @@
 import { buildApiUrl, defaultJsonHeaders } from "./apiPrefix";
+import { API_BASE_URL } from "./apiBase";
 import type {
   Professional,
   NewProfessionalData,
@@ -29,13 +30,19 @@ function sTrim(val: unknown): string {
 }
 
 /**
- * Se você já possui uma função global para resolver imagem (ex.: resolveImageUrl),
- * substitua essa implementação.
+ * Monta URL absoluta para a imagem:
+ * - Se já for http(s) ou data:, retorna como está.
+ * - Caso contrário, garante /uploads/<arquivo> no domínio do backend (API_BASE_URL).
  */
 function resolveImageUrl(raw: string | undefined | null): string | undefined {
-  if (!raw) return undefined;
-  if (/^https?:\/\//.test(raw)) return raw;
-  return `/uploads/${raw}`; // ajuste conforme seu backend/infra
+  const v = sTrim(raw);
+  if (!v) return undefined;
+  if (/^(https?:|data:)/i.test(v)) return v;
+
+  const base = (API_BASE_URL || "").replace(/\/+$/, "");
+  const rel = v.replace(/^\/+/, "");
+  const withUploads = rel.startsWith("uploads/") ? rel : `uploads/${rel}`;
+  return `${base}/${withUploads}`.replace(/([^:]\/)\/+/g, "$1");
 }
 
 /**
@@ -67,7 +74,7 @@ function mapProfessional(raw: any): Professional {
     createdAt: raw?.createdAt ?? raw?.created_at,
     updatedAt: raw?.updatedAt ?? raw?.updated_at,
 
-    // Os campos abaixo podem existir no seu tipo Professional; se não existirem, remova-os do retorno:
+    // Campos auxiliares usados no card
     isInactive: active === false || !!raw?.deleted_at,
     photoUrl: resolveImageUrl(raw?.photo),
     displayName: active === false ? `${name} (Inativo)` : name,
@@ -151,10 +158,6 @@ async function buildFormDataFromProfessional(
  * ============================================================
  */
 
-/**
- * Lista de profissionais.
- * includeInactive = true retorna também ativos=false.
- */
 export async function fetchProfessionals(
   clinicId?: number | string,
   opts?: { includeInactive?: boolean }
@@ -173,9 +176,6 @@ export async function fetchProfessionals(
   return Array.isArray(data) ? data.map(mapProfessional) : [];
 }
 
-/**
- * Cria um profissional.
- */
 export async function addProfessional(
   data: NewProfessionalData
 ): Promise<Professional> {
@@ -205,10 +205,6 @@ export async function addProfessional(
   }
 }
 
-/**
- * Atualiza profissional (PUT completo).
- * Permite alterar active (soft delete / reativação) e available (disponibilidade).
- */
 export async function updateProfessional(
   id: number,
   clinicId: number | string,
@@ -240,9 +236,6 @@ export async function updateProfessional(
   }
 }
 
-/**
- * Soft delete: marca active=false.
- */
 export async function deactivateProfessional(
   id: number,
   clinicId: number | string
@@ -268,9 +261,6 @@ export async function deactivateProfessional(
   });
 }
 
-/**
- * Reativar (active=true).
- */
 export async function reactivateProfessional(
   id: number,
   clinicId: number | string
@@ -296,9 +286,6 @@ export async function reactivateProfessional(
   });
 }
 
-/**
- * Busca individual (fallback via listagem).
- */
 export async function fetchProfessionalById(
   id: number,
   clinicId: number | string
@@ -309,9 +296,6 @@ export async function fetchProfessionalById(
   return found;
 }
 
-/**
- * Hard delete (desencorajado para históricos).
- */
 export async function deleteProfessional(
   id: number,
   clinicId: number | string
@@ -330,9 +314,6 @@ export async function deleteProfessional(
   }
 }
 
-/**
- * Atualiza apenas disponibilidade (available).
- */
 export async function setProfessionalAvailability(
   id: number,
   clinicId: number | string,
