@@ -105,16 +105,23 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
     try {
       if (isEditData(formData) && editingProfessional) {
         // Edição
-        const updated = await updateProfessional(formData.id, clinicId, {
+        const payload: any = {
           name: (formData.name ?? "").trim(),
           specialty: (formData.specialty ?? "").trim(),
           available: formData.available ?? true,
-            email: formData.email,
+          email: formData.email,
           phone: formData.phone,
           resume: (formData as any).resume,
-          photo: (formData.photo ?? "").trim(),
           clinicId,
-        });
+        };
+
+        // Hotfix: não enviar data URL (base64) em edição; evita 500 até ajustarmos o backend para multipart
+        const photo = (formData.photo ?? "").trim();
+        if (photo && !photo.startsWith("data:")) {
+          payload.photo = photo;
+        }
+
+        const updated = await updateProfessional(formData.id, clinicId, payload);
         const norm = normalizeProfessional(updated);
         setProfessionals(prev => prev.map(p => (p.id === norm.id ? { ...p, ...norm } : p)));
       } else {
@@ -142,6 +149,32 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
       setLoading(false);
     }
   }
+
+  return (
+    <>
+      <ProfessionalsManager
+        professionals={professionals}
+        onAdd={openAddModal}
+        onEdit={openEditModal}
+        onDelete={handleDeactivateProfessional}
+        reactivateProfessional={handleReactivateProfessional}
+        loading={loading}
+        error={error}
+        clinicId={clinicId}
+        showInactive={true}
+      />
+
+      {isProfessionalModalOpen && (
+        <ProfessionalFormModal
+          onClose={closeModal}
+          onSubmit={handleSubmitProfessional}
+          initialData={editingProfessional || undefined}
+          isEditMode={!!editingProfessional}
+          clinicId={clinicId}
+        />
+      )}
+    </>
+  );
 
   async function handleDeactivateProfessional(id: number) {
     if (!window.confirm("Desativar este profissional? Agendamentos antigos serão mantidos.")) return;
@@ -173,32 +206,6 @@ const ProfessionalsTab: React.FC<ProfessionalsTabProps> = ({
       setLoading(false);
     }
   }
-
-  return (
-    <>
-      <ProfessionalsManager
-        professionals={professionals}
-        onAdd={openAddModal}
-        onEdit={openEditModal}
-        onDelete={handleDeactivateProfessional}
-        reactivateProfessional={handleReactivateProfessional}
-        loading={loading}
-        error={error}
-        clinicId={clinicId}
-        showInactive={true}
-      />
-
-      {isProfessionalModalOpen && (
-        <ProfessionalFormModal
-          onClose={closeModal}
-          onSubmit={handleSubmitProfessional}
-          initialData={editingProfessional || undefined}
-          isEditMode={!!editingProfessional}
-          clinicId={clinicId}
-        />
-      )}
-    </>
-  );
 };
 
 export default ProfessionalsTab;

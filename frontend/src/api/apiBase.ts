@@ -1,27 +1,53 @@
-// (Mantém exatamente o que você já tinha; acrescentado apenas documentação)
+// Base da API para Vite. Remove dependência de process.env no runtime do navegador.
+// Fonte: VITE_API_URL (Vercel/ambiente), com fallbacks seguros.
 
-const RAW = (process.env.REACT_APP_API_URL ?? "").trim();
-const noTrailing = RAW.replace(/\/+$/, "");
-const baseWithoutApi = noTrailing.replace(/\/api$/i, "");
-const finalBase = baseWithoutApi || (process.env.NODE_ENV === "development" ? "http://localhost:3001" : "");
-export const API_BASE_URL = finalBase;
+type AnyEnv = { [k: string]: any };
 
-/**
- * IMPORTANTE:
- * Rotas de Pacientes (listagem, CRUD, busca, sub-recursos) estão SEM prefixo /api:
- *   GET/POST   /patients
- *   GET/PUT    /patients/:id
- *   GET/PUT    /patients/:id/anamnese  (ou anamnese-tcle)   -> ver naming real
- *   GET        /patients/:id/procedures
- * Ajustar caso backend mude.
- */
-
-export function apiUrl(path: string): string {
-  let p = (path || "").trim();
-  p = p.replace(/^\/+/, "");
-  if (p.toLowerCase().startsWith("api/")) {
-    p = p.slice(4);
+function readEnv(key: string): string | undefined {
+  try {
+    const env = (import.meta as AnyEnv)?.env as AnyEnv;
+    const val = env?.[key];
+    if (typeof val === "string") return val;
+  } catch {
+    /* ignore */
   }
+  return undefined;
+}
+
+// 1) Preferir VITE_API_URL (defina em Vercel)
+// 2) Opcional: window.__APP_API_URL (se você injeta via <script>)
+// 3) Dev fallback: http://localhost:3001
+// 4) Prod fallback: origin (somente se seu backend estiver no mesmo domínio)
+const fromVite = (readEnv("VITE_API_URL") || "").trim();
+const fromWindow =
+  typeof window !== "undefined" && (window as any).__APP_API_URL
+    ? String((window as any).__APP_API_URL).trim()
+    : "";
+
+let base = fromVite || fromWindow;
+
+if (base.endsWith("/")) base = base.replace(/\/+$/, "");
+// Garantir que não terminamos com /api: deixamos essa decisão para quem monta as rotas
+if (/\/api$/i.test(base)) base = base.replace(/\/api$/i, "");
+
+// Fallbacks
+if (!base) {
+  const isDev = readEnv("MODE") === "development" || readEnv("DEV") === "true";
+  if (isDev) {
+    base = "http://localhost:3001";
+  } else if (typeof window !== "undefined" && window.location?.origin) {
+    base = window.location.origin;
+  } else {
+    base = "";
+  }
+}
+
+export const API_BASE_URL = base;
+
+// Helpers compatíveis com código legado
+export function apiUrl(path: string): string {
+  let p = (path || "").trim().replace(/^\/+/, "");
+  if (p.toLowerCase().startsWith("api/")) p = p.slice(4);
   const url = `${API_BASE_URL}/api/${p}`;
   return url.replace(/([^:]\/)\/+/g, "$1");
 }

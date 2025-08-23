@@ -9,9 +9,6 @@ import type {
  * ============================================================
  */
 
-/**
- * Converte valores variados em booleano semântico.
- */
 function toBool(val: any): boolean {
   if (typeof val === "boolean") return val;
   if (val === 1 || val === "1") return true;
@@ -22,6 +19,13 @@ function toBool(val: any): boolean {
     if (lowered === "false") return false;
   }
   return !!val;
+}
+
+/**
+ * Converte com segurança para string e aplica trim.
+ */
+function sTrim(val: unknown): string {
+  return String(val ?? "").trim();
 }
 
 /**
@@ -38,35 +42,36 @@ function resolveImageUrl(raw: string | undefined | null): string | undefined {
  * Normaliza objeto cru vindo da API para Professional.
  */
 function mapProfessional(raw: any): Professional {
-  const clinicIdRaw = raw.clinic_id ?? raw.clinicId ?? 0;
-  const active = raw.active === false ? false : true;
-  const name = String(raw.name ?? "").trim();
+  const clinicIdRaw = raw?.clinic_id ?? raw?.clinicId ?? 0;
+  const active = raw?.active === false ? false : true;
+  const name = sTrim(raw?.name);
 
   return {
-    id: Number(raw.id),
+    id: Number(raw?.id),
     name,
-    specialty: String(raw.specialty ?? raw.speciality ?? "").trim(),
-    photo: raw.photo ? String(raw.photo) : "",
-    available: toBool(raw.available ?? raw.isAvailable ?? true),
+    specialty: sTrim(raw?.specialty ?? raw?.speciality),
+    photo: raw?.photo ? String(raw.photo) : "",
+    available: toBool(raw?.available ?? raw?.isAvailable ?? true),
     clinic_id: Number(clinicIdRaw),
     clinicId: Number(clinicIdRaw),
 
-    email: raw.email != null ? String(raw.email) : "",
-    phone: raw.phone != null ? String(raw.phone) : "",
-    resume: raw.resume != null ? String(raw.resume) : "",
-    color: raw.color != null ? String(raw.color) : "",
+    email: raw?.email != null ? String(raw.email) : "",
+    phone: raw?.phone != null ? String(raw.phone) : "",
+    resume: raw?.resume != null ? String(raw.resume) : "",
+    color: raw?.color != null ? String(raw.color) : "",
 
     active,
-    deleted_at: raw.deleted_at ?? null,
-    created_at: raw.created_at,
-    updated_at: raw.updated_at,
-    createdAt: raw.createdAt ?? raw.created_at,
-    updatedAt: raw.updatedAt ?? raw.updated_at,
+    deleted_at: raw?.deleted_at ?? null,
+    created_at: raw?.created_at,
+    updated_at: raw?.updated_at,
+    createdAt: raw?.createdAt ?? raw?.created_at,
+    updatedAt: raw?.updatedAt ?? raw?.updated_at,
 
-    isInactive: active === false || !!raw.deleted_at,
-    photoUrl: resolveImageUrl(raw.photo),
+    // Os campos abaixo podem existir no seu tipo Professional; se não existirem, remova-os do retorno:
+    isInactive: active === false || !!raw?.deleted_at,
+    photoUrl: resolveImageUrl(raw?.photo),
     displayName: active === false ? `${name} (Inativo)` : name,
-  };
+  } as Professional;
 }
 
 async function parseBody(res: Response): Promise<any> {
@@ -92,6 +97,53 @@ async function parseOrThrow<T = any>(
     throw new Error(msg);
   }
   return (await parseBody(res)) as T;
+}
+
+function isDataUrlPhoto(v: unknown): v is string {
+  return typeof v === "string" && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(v);
+}
+
+function inferExtFromMime(mime: string): string {
+  const m = mime.split("/")[1] || "png";
+  return m.toLowerCase() === "jpeg" ? "jpg" : m.toLowerCase();
+}
+
+async function buildFormDataFromProfessional(
+  data: Partial<NewProfessionalData & { active?: boolean }>,
+  clinicId: number | string
+): Promise<FormData> {
+  const fd = new FormData();
+
+  // Campos básicos, sempre stringificados
+  if (data.name != null) fd.append("name", sTrim(data.name));
+  if (data.specialty != null) fd.append("specialty", sTrim(data.specialty));
+  if (data.email != null) fd.append("email", String(data.email ?? ""));
+  if (data.phone != null) fd.append("phone", String(data.phone ?? ""));
+  if ((data as any).resume != null) fd.append("resume", String((data as any).resume ?? ""));
+  if ((data as any).color != null) fd.append("color", String((data as any).color ?? ""));
+  if (data.available != null) fd.append("available", String(!!data.available));
+  if ((data as any).active != null) fd.append("active", String(!!(data as any).active));
+
+  // clinicId/clinic_id aceitos no backend
+  fd.append("clinicId", String((data as any).clinicId ?? clinicId));
+
+  // Foto: somente se vier data URL (nova imagem)
+  if (isDataUrlPhoto((data as any).photo)) {
+    const dataUrl = String((data as any).photo);
+    const [meta] = dataUrl.split(",");
+    const mimeMatch = meta.match(/^data:(.*?);base64$/i);
+    const mime = mimeMatch?.[1] || "image/png";
+    const ext = inferExtFromMime(mime);
+
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], `photo.${ext}`, { type: mime });
+    fd.append("photo", file);
+  } else if (typeof (data as any).photo === "string" && String((data as any).photo).trim()) {
+    // Foto já é um caminho/arquivo existente: mande como texto para manter
+    fd.append("photo", String((data as any).photo).trim());
+  }
+
+  return fd;
 }
 
 /* ============================================================
@@ -128,23 +180,33 @@ export async function addProfessional(
   data: NewProfessionalData
 ): Promise<Professional> {
   const url = await buildApiUrl("professionals");
-  const payload = {
-    ...data,
-    clinic_id: data.clinicId,
-    active: true, // garantir explicitamente
-  };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: defaultJsonHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const json = await parseOrThrow(res, "addProfessional");
-  return mapProfessional(json);
+
+  // Se houver nova foto (data URL), enviar multipart; caso contrário, JSON
+  if (isDataUrlPhoto((data as any).photo)) {
+    const fd = await buildFormDataFromProfessional(data, data.clinicId);
+    const res = await fetch(url, { method: "POST", body: fd });
+    const json = await parseOrThrow(res, "addProfessional[multipart]");
+    return mapProfessional(json);
+  } else {
+    const payload = {
+      ...data,
+      name: sTrim(data.name),
+      specialty: sTrim(data.specialty),
+      clinic_id: data.clinicId,
+      active: true,
+    };
+    const res = await fetch(url, {
+      method: "POST",
+      headers: defaultJsonHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = await parseOrThrow(res, "addProfessional[json]");
+    return mapProfessional(json);
+  }
 }
 
 /**
  * Atualiza profissional (PUT completo).
- * Se seu backend tratar parcial, ótimo; senão, envie todos os campos.
  * Permite alterar active (soft delete / reativação) e available (disponibilidade).
  */
 export async function updateProfessional(
@@ -156,31 +218,35 @@ export async function updateProfessional(
     clinicId: String(clinicId),
   });
 
-  const payload: any = {
-    ...data,
-    clinic_id: data.clinicId ?? clinicId,
-  };
-
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: defaultJsonHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const json = await parseOrThrow(res, "updateProfessional");
-  return mapProfessional(json);
+  if (isDataUrlPhoto((data as any).photo)) {
+    const fd = await buildFormDataFromProfessional(data, clinicId);
+    const res = await fetch(url, { method: "PUT", body: fd });
+    const json = await parseOrThrow(res, "updateProfessional[multipart]");
+    return mapProfessional(json);
+  } else {
+    const payload: any = {
+      ...data,
+      name: data.name != null ? sTrim(data.name) : undefined,
+      specialty: data.specialty != null ? sTrim(data.specialty) : undefined,
+      clinic_id: (data as any).clinicId ?? clinicId,
+    };
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: defaultJsonHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = await parseOrThrow(res, "updateProfessional[json]");
+    return mapProfessional(json);
+  }
 }
 
 /**
  * Soft delete: marca active=false.
- * (Preferível ao deleteProfessional para preservar histórico.)
  */
 export async function deactivateProfessional(
   id: number,
   clinicId: number | string
 ): Promise<Professional> {
-  // Para desativar corretamente, precisamos dos dados atuais para não sobrescrever com undefined
-  // Caso a API exija PUT completo.
-  // Se a API aceitar PUT parcial, basta enviar { active:false } + clinicId.
   const current = await fetchProfessionalById(id, clinicId).catch(() => null);
 
   const basePayload = current
@@ -231,9 +297,7 @@ export async function reactivateProfessional(
 }
 
 /**
- * Busca individual (se precisar exibir formulário com dados atualizados).
- * Backend atual não mostrou GET /professionals/:id, então usamos fetch lista + find.
- * Se criar endpoint específico, substitua esta estratégia.
+ * Busca individual (fallback via listagem).
  */
 export async function fetchProfessionalById(
   id: number,
@@ -247,8 +311,6 @@ export async function fetchProfessionalById(
 
 /**
  * Hard delete (desencorajado para históricos).
- * Mantenha apenas para limpar registros errados sem agendamentos.
- * No fluxo normal, prefira deactivateProfessional.
  */
 export async function deleteProfessional(
   id: number,
@@ -269,7 +331,7 @@ export async function deleteProfessional(
 }
 
 /**
- * Atualiza apenas disponibilidade (available) reusando updateProfessional.
+ * Atualiza apenas disponibilidade (available).
  */
 export async function setProfessionalAvailability(
   id: number,
