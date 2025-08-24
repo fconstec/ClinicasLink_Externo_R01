@@ -49,35 +49,18 @@ function resolveImageUrl(raw: string | undefined | null): string | undefined {
  * Normaliza objeto cru vindo da API para Professional.
  */
 function mapProfessional(raw: any): Professional {
-  const clinicIdRaw = raw?.clinic_id ?? raw?.clinicId ?? 0;
-  const active = raw?.active === false ? false : true;
-  const name = sTrim(raw?.name);
-
   return {
     id: Number(raw?.id),
-    name,
-    specialty: sTrim(raw?.specialty ?? raw?.speciality),
+    name: sTrim(raw?.name),
+    specialty: sTrim(raw?.specialty),
     photo: raw?.photo ? String(raw.photo) : "",
-    available: toBool(raw?.available ?? raw?.isAvailable ?? true),
-    clinic_id: Number(clinicIdRaw),
-    clinicId: Number(clinicIdRaw),
-
+    available: toBool(raw?.available),
+    clinicId: Number(raw?.clinicId ?? raw?.clinic_id),
+    clinic_id: Number(raw?.clinic_id ?? raw?.clinicId), // compatível com ambos
     email: raw?.email != null ? String(raw.email) : "",
     phone: raw?.phone != null ? String(raw.phone) : "",
     resume: raw?.resume != null ? String(raw.resume) : "",
-    color: raw?.color != null ? String(raw.color) : "",
-
-    active,
-    deleted_at: raw?.deleted_at ?? null,
-    created_at: raw?.created_at,
-    updated_at: raw?.updated_at,
-    createdAt: raw?.createdAt ?? raw?.created_at,
-    updatedAt: raw?.updatedAt ?? raw?.updated_at,
-
-    // Campos auxiliares usados no card
-    isInactive: active === false || !!raw?.deleted_at,
-    photoUrl: resolveImageUrl(raw?.photo),
-    displayName: active === false ? `${name} (Inativo)` : name,
+    active: toBool(raw?.active),
   } as Professional;
 }
 
@@ -127,12 +110,11 @@ async function buildFormDataFromProfessional(
   if (data.email != null) fd.append("email", String(data.email ?? ""));
   if (data.phone != null) fd.append("phone", String(data.phone ?? ""));
   if ((data as any).resume != null) fd.append("resume", String((data as any).resume ?? ""));
-  if ((data as any).color != null) fd.append("color", String((data as any).color ?? ""));
   if (data.available != null) fd.append("available", String(!!data.available));
   if ((data as any).active != null) fd.append("active", String(!!(data as any).active));
 
-  // clinicId/clinic_id aceitos no backend
-  fd.append("clinicId", String((data as any).clinicId ?? clinicId));
+  // clinic_id para o backend
+  fd.append("clinic_id", String((data as any).clinicId ?? (data as any).clinic_id ?? clinicId));
 
   // Foto: somente se vier data URL (nova imagem)
   if (isDataUrlPhoto((data as any).photo)) {
@@ -146,7 +128,6 @@ async function buildFormDataFromProfessional(
     const file = new File([blob], `photo.${ext}`, { type: mime });
     fd.append("photo", file);
   } else if (typeof (data as any).photo === "string" && String((data as any).photo).trim()) {
-    // Foto já é um caminho/arquivo existente: mande como texto para manter
     fd.append("photo", String((data as any).photo).trim());
   }
 
@@ -166,7 +147,7 @@ export async function fetchProfessionals(
     "professionals",
     clinicId
       ? {
-          clinicId: String(clinicId),
+          clinic_id: String(clinicId),
           ...(opts?.includeInactive ? { showInactive: "true" } : {}),
         }
       : undefined
@@ -211,7 +192,7 @@ export async function updateProfessional(
   data: Partial<NewProfessionalData & { active?: boolean }>
 ): Promise<Professional> {
   const url = await buildApiUrl(`professionals/${id}`, {
-    clinicId: String(clinicId),
+    clinic_id: String(clinicId),
   });
 
   if (isDataUrlPhoto((data as any).photo)) {
@@ -224,7 +205,7 @@ export async function updateProfessional(
       ...data,
       name: data.name != null ? sTrim(data.name) : undefined,
       specialty: data.specialty != null ? sTrim(data.specialty) : undefined,
-      clinic_id: (data as any).clinicId ?? clinicId,
+      clinic_id: (data as any).clinicId ?? (data as any).clinic_id ?? clinicId,
     };
     const res = await fetch(url, {
       method: "PUT",
@@ -251,7 +232,6 @@ export async function deactivateProfessional(
         email: current.email,
         phone: current.phone,
         resume: current.resume,
-        color: current.color,
       }
     : {};
 
@@ -276,7 +256,6 @@ export async function reactivateProfessional(
         email: current.email,
         phone: current.phone,
         resume: current.resume,
-        color: current.color,
       }
     : {};
 
@@ -301,7 +280,7 @@ export async function deleteProfessional(
   clinicId: number | string
 ): Promise<void> {
   const url = await buildApiUrl(`professionals/${id}`, {
-    clinicId: String(clinicId),
+    clinic_id: String(clinicId),
   });
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
@@ -329,7 +308,6 @@ export async function setProfessionalAvailability(
         email: current.email,
         phone: current.phone,
         resume: current.resume,
-        color: current.color,
         active: current.active,
       }
     : {};
