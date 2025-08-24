@@ -22,17 +22,21 @@ const ensureUploadsFolderExists = () => {
 ensureUploadsFolderExists();
 
 const storage: StorageEngine = multer.diskStorage({
-  destination: function (req: Request, file: Express.Multer.File, cb) {
+  destination: function (_req: Request, _file: Express.Multer.File, cb) {
     cb(null, UPLOADS_FOLDER);
   },
   filename: function (req: Request, file: Express.Multer.File, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + extension);
+    // Para fotos de profissionais, garante o nome photo-<timestamp>-<random>.<extensão>
+    const ext = path.extname(file.originalname) || '.png';
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    // Se o campo for photo, salva como photo-<unique>.<ext>
+    // Se for outro campo, salva com fieldname
+    const prefix = file.fieldname === 'photo' ? 'photo' : file.fieldname;
+    cb(null, `${prefix}-${unique}${ext}`);
   }
 });
 
-const fileFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+const fileFilter = (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -47,6 +51,9 @@ const upload = multer({
   },
   fileFilter: fileFilter
 });
+
+// Upload de foto do profissional (campo "photo")
+export const uploadProfessionalPhoto = upload.single('photo');
 
 // Upload de foto do paciente (campo "photo")
 export const uploadPatientPhoto = upload.single('photo');
