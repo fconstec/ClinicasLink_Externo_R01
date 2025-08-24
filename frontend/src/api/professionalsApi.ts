@@ -39,10 +39,8 @@ function resolveImageUrl(raw: string | undefined | null): string | undefined {
   if (!v) return undefined;
   if (/^(https?:|data:)/i.test(v)) return v;
 
-  const base = (API_BASE_URL || "").replace(/\/+$/, "");
-  const rel = v.replace(/^\/+/, "");
-  const withUploads = rel.startsWith("uploads/") ? rel : `uploads/${rel}`;
-  return `${base}/${withUploads}`.replace(/([^:]\/)\/+/g, "$1");
+  // photo = nome do arquivo salvo, ex: photo-xxxx.png
+  return `${API_BASE_URL.replace(/\/+$/, "")}/uploads/${v.replace(/^\/+/, "")}`;
 }
 
 /**
@@ -76,7 +74,7 @@ function mapProfessional(raw: any): Professional {
 
     // Campos auxiliares usados no card
     isInactive: active === false || !!raw?.deleted_at,
-    photoUrl: resolveImageUrl(raw?.photo),
+    photoUrl: raw?.photo ? resolveImageUrl(raw?.photo) : undefined,
     displayName: active === false ? `${name} (Inativo)` : name,
   } as Professional;
 }
@@ -148,7 +146,6 @@ async function buildFormDataFromProfessional(
     const file = new File([blob], `photo.${ext}`, { type: mime });
     fd.append("photo", file);
   } else if (typeof (data as any).photo === "string" && String((data as any).photo).trim()) {
-    // Foto já é um caminho/arquivo existente: manda como texto para o banco
     fd.append("photo", String((data as any).photo).trim());
   }
 
