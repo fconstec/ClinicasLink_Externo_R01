@@ -1,21 +1,18 @@
 import { fileUrl } from "@/api/apiBase";
 
-/**
- * Converte um valor (File | string | objeto com múltiplos campos) em uma URL exibível.
- * Suporta variações comuns vindas do backend e construções de Supabase Storage public URL.
- */
-
 // Obter SUPABASE_URL da env (Vite ou CRA)
 const SUPABASE_URL =
-  // Vite
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) ||
-  // CRA / Node fallback
   (typeof process !== "undefined" && process.env?.REACT_APP_SUPABASE_URL) ||
   "";
 
 // Default bucket que decidimos usar (mude se o seu bucket tiver outro nome)
 const DEFAULT_SUPABASE_BUCKET = "avatars";
 
+/**
+ * Resolve qualquer campo de imagem vindo do backend ou Supabase Storage.
+ * Para fotos salvas pelo backend local, use /uploads/<nome>.
+ */
 export function resolveImageUrl(src: any): string {
   if (!src) return "";
   if (src instanceof File) return URL.createObjectURL(src);
@@ -32,7 +29,7 @@ export function resolveImageUrl(src: any): string {
     src.fullPath,
     src.filename,
     src.fileName,
-    src.name, // pode ser apenas nome cru
+    src.name,
   ].filter(Boolean) as string[];
 
   for (const c of candidates) {
@@ -51,38 +48,32 @@ function buildFromRaw(raw: string): string {
 
   // Já é uma URL pública do Supabase Storage
   if (/\/storage\/v1\/object\/public\//i.test(r)) {
-    // normalize: se começa com // ou sem protocolo, devolve como está
     return r;
   }
 
-  // Se parece com um path de supabase "bucket/path/to/file" ou "avatars/..." ou "patients/..."
-  // Detecta se começa com "<bucket>/" (uma palavra sem barra seguida de barra)
+  // Se parece com um path de supabase "bucket/path/to/file" ou "avatars/..."
   if (/^[a-z0-9_-]+\/.+/i.test(r)) {
     const parts = r.split("/");
     const maybeBucket = parts[0];
-    // Se o primeiro segmento for igual ao bucket que usamos ou se for 'avatars' ou 'patients', constrói public url
     const bucket = maybeBucket === DEFAULT_SUPABASE_BUCKET ? maybeBucket : DEFAULT_SUPABASE_BUCKET;
     if (SUPABASE_URL) {
-      // Ex: https://<project>.supabase.co/storage/v1/object/public/{bucket}/{path-without-bucket-if-we-used-default}
       const pathWithoutBucket = maybeBucket === bucket ? parts.slice(1).join("/") : r;
-      // Sanitize leading slashes
       const cleanPath = pathWithoutBucket.replace(/^\/+/, "");
       return `${SUPABASE_URL.replace(/\/$/,"")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
     }
-    // If no SUPABASE_URL available, fall through to fileUrl fallback
   }
 
-  // Caminhos absolutos rodando no backend (ex: "/uploads/..." ou "/avatars/...")
+  // Backend local: /uploads/arquivo.png
   if (r.startsWith("/uploads/")) return fileUrl(r);
   if (r.startsWith("/")) return fileUrl(r);
 
   // Caminho relativo indicando uploads
   if (r.startsWith("uploads/")) return fileUrl("/" + r);
 
-  // Nome simples com extensão -> assumir /uploads/filename
+  // Nome simples com extensão -> /uploads/filename
   if (/\.[a-z0-9]{2,5}($|\?)/i.test(r)) return fileUrl("/uploads/" + r);
 
-  // Último fallback: prefixa barra e usa fileUrl
+  // Último fallback
   return fileUrl("/" + r);
 }
 

@@ -1,41 +1,23 @@
 import React from 'react';
 import { Plus, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { Professional } from './types';
+import { resolveImageUrl } from '../../utils/resolveImage';
 
 export interface ProfessionalsManagerProps {
   professionals: Professional[];
-  onAdd: () => void;                               // abre modal de criação
+  onAdd: () => void;
   onEdit: (professional: Professional) => void;
-  /**
-   * onDelete agora significa "Desativar" (soft delete).
-   * Mantido o nome para retrocompatibilidade.
-   */
   onDelete: (id: number) => void | Promise<void>;
-  /**
-   * Reativa profissional inativo (active=false).
-   */
   reactivateProfessional?: (id: number) => void | Promise<void>;
   loading?: boolean;
   error?: string | null;
   clinicId: number;
-  /**
-   * Se true, mostra também os inativos (normalmente você já envia a lista completa).
-   * Se quiser filtrar antes, pode usar isto.
-   */
   showInactive?: boolean;
-  /**
-   * Ordenar ativos primeiro (default true).
-   */
   sortActiveFirst?: boolean;
 }
 
 const addButtonClasses =
   "bg-[#e11d48] text-white hover:bg-[#f43f5e] flex items-center px-4 py-2 rounded text-sm font-medium transition-colors";
-
-function getPhotoSrc(p: Professional): string | undefined {
-  const src = (p as any).photoUrl || p.photo;
-  return src || undefined;
-}
 
 const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
   professionals,
@@ -49,7 +31,6 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
   showInactive = true,
   sortActiveFirst = true,
 }) => {
-  // Filtra se solicitado
   const visible = showInactive
     ? professionals
     : professionals.filter(p => p.active !== false);
@@ -102,7 +83,7 @@ const ProfessionalsManager: React.FC<ProfessionalsManagerProps> = ({
           data-professionals-count={ordered.length}
         >
           {ordered.map((professional) => {
-            const photoSrc = getPhotoSrc(professional);
+            const photoSrc = resolveImageUrl(professional.photo);
             const numericId =
               typeof professional.id === 'string'
                 ? parseInt(professional.id as any, 10)
