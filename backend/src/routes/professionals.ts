@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../supabaseClient";
-import multer, { FileFilterCallback } from "multer";
+import { uploadProfessionalPhoto } from "../middleware/uploadMiddleware";
 import path from "path";
 import fs from "fs";
 
@@ -23,26 +23,6 @@ function ensureUploadsDir() {
   }
 }
 ensureUploadsDir();
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".png";
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `photo-${unique}${ext}`);
-  },
-});
-
-function fileFilter(_req: any, file: Express.Multer.File, cb: FileFilterCallback) {
-  if (file.mimetype?.startsWith("image/")) return cb(null, true);
-  return cb(new Error("Formato de arquivo não suportado. Envie uma imagem."));
-}
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter,
-});
 
 async function saveDataUrlToFile(dataUrl: string): Promise<string> {
   // data:image/png;base64,xxxx
@@ -112,7 +92,7 @@ router.get("/", async (req, res) => {
 // Aceita:
 // - multipart/form-data com campo "photo" (arquivo)
 // - JSON com campo "photo" sendo data URL (base64) OU string nome do arquivo já salvo
-router.post("/", upload.single("photo"), async (req, res) => {
+router.post("/", uploadProfessionalPhoto, async (req, res) => {
   try {
     const clinicId = req.body.clinic_id || req.body.clinicId;
     const name = req.body.name;
@@ -161,7 +141,7 @@ router.post("/", upload.single("photo"), async (req, res) => {
 
 // PUT /api/professionals/:id
 // Suporta multipart e JSON, incluindo troca de foto via arquivo ou base64
-router.put("/:id", upload.single("photo"), async (req, res) => {
+router.put("/:id", uploadProfessionalPhoto, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const clinicId = req.body.clinic_id || req.body.clinicId;

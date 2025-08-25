@@ -25,12 +25,10 @@ const storage: StorageEngine = multer.diskStorage({
   destination: function (_req: Request, _file: Express.Multer.File, cb) {
     cb(null, UPLOADS_FOLDER);
   },
-  filename: function (req: Request, file: Express.Multer.File, cb) {
-    // Para fotos de profissionais, garante o nome photo-<timestamp>-<random>.<extensão>
+  filename: function (_req: Request, file: Express.Multer.File, cb) {
+    // Padrão photo-<timestamp>-<random>.<extensão> para profissionais
     const ext = path.extname(file.originalname) || '.png';
     const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    // Se o campo for photo, salva como photo-<unique>.<ext>
-    // Se for outro campo, salva com fieldname
     const prefix = file.fieldname === 'photo' ? 'photo' : file.fieldname;
     cb(null, `${prefix}-${unique}${ext}`);
   }
