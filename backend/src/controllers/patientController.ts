@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { supabase } from '../supabaseClient';
+import { removeImage } from '../services/storageService';
 
 interface Patient {
   id: number;
@@ -201,12 +202,6 @@ export const createPatient = async (req: Request, res: Response) => {
   }
 
   const { name, email, phone, birthdate, address, city, state, zipcode } = req.body;
-  if (!name || name.trim().length < 2) {
-    return res.status(400).json({ message: 'Nome do paciente é obrigatório.' });
-  }
-  if (!email || !/\S+@\S+\.\S+/.test(email)) {
-    return res.status(400).json({ message: "E-mail válido é obrigatório." });
-  }
 
   const { data: existing, error: existingError } = await supabase
     .from('patients')
@@ -224,7 +219,7 @@ export const createPatient = async (req: Request, res: Response) => {
 
   let photo: string | null = null;
   if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
+    photo = (req as any).file.filename;
   } else if (req.body.photo) {
     photo = req.body.photo;
   }
@@ -280,9 +275,28 @@ export const updatePatient = async (
   }
 
   const { name, email, phone, birthdate, address, city, state, zipcode } = req.body;
-  let photo = req.body.photo || null;
+
+  // Busca paciente atual para comparar foto
+  const { data: currentPatient, error: currentError } = await supabase
+    .from('patients')
+    .select('photo')
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError) {
+    return res.status(500).json({ message: 'Erro ao buscar paciente existente.' });
+  }
+
+  let photo = currentPatient?.photo || null;
   if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
+    photo = (req as any).file.filename;
+    if (currentPatient?.photo && currentPatient.photo !== photo) {
+      await removeImage(currentPatient.photo);
+    }
+  } else if (req.body.photo) {
+    photo = req.body.photo;
+    if (currentPatient?.photo && currentPatient.photo !== photo) {
+      await removeImage(currentPatient.photo);
+    }
   }
 
   const updatedFields: Partial<Patient> = {
@@ -344,7 +358,6 @@ export const deletePatient = async (
       return res.status(400).json({ message: "clinicId inválido" });
     }
   }
-  
 
   if (isNaN(id)) {
     return res.status(400).json({ message: "ID inválido" });
@@ -358,11 +371,17 @@ export const deletePatient = async (
     const { data: deletedPatients, error } = await deleteQuery.select('*');
     if (error) throw error;
 
-    const deletedCount = Array.isArray(deletedPatients) ? deletedPatients.length : (deletedPatients ? 1 : 0);
-
-    if (!deletedCount) {
+    const deletedPatient = Array.isArray(deletedPatients)
+      ? deletedPatients[0]
+      : deletedPatients;
+    if (!deletedPatient) {
       return res.status(404).json({ message: 'Paciente não encontrado.' });
     }
+
+    if (deletedPatient.photo) {
+      try { await removeImage(deletedPatient.photo); } catch {}
+    }
+
     return res.status(204).send();
 
   } catch (error) {

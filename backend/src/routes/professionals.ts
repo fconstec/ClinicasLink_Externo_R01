@@ -1,67 +1,22 @@
 import { Router } from "express";
 import { supabase } from "../supabaseClient";
 import { uploadProfessionalPhoto } from "../middleware/uploadMiddleware";
-import path from "path";
-import fs from "fs";
+import { uploadImageFromDataUrl } from "../services/storageService";
 
 const router = Router();
 
-/* ============================
-   Uploads - armazenamento local
-   ============================ */
-
-const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
-
-function ensureUploadsDir() {
-  try {
-    if (!fs.existsSync(UPLOADS_DIR)) {
-      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-      console.log("Uploads dir criado em:", UPLOADS_DIR);
-    }
-  } catch (e) {
-    console.error("Falha ao criar pasta de uploads:", e);
-  }
-}
-ensureUploadsDir();
-
-async function saveDataUrlToFile(dataUrl: string): Promise<string> {
-  // data:image/png;base64,xxxx
-  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) throw new Error("Data URL inválida");
-  const mime = match[1];
-  const b64 = match[2];
-  const buf = Buffer.from(b64, "base64");
-
-  const ext = (() => {
-    const m = mime.split("/")[1]?.toLowerCase() || "png";
-    return m === "jpeg" ? "jpg" : m;
-  })();
-
-  const fname = `photo-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
-  const fpath = path.join(UPLOADS_DIR, fname);
-  await fs.promises.writeFile(fpath, buf);
-  return fname; // salvamos apenas o nome; o front resolve /uploads/<nome>
-}
-
-async function extractPhotoFilename(req: any, currentFilename?: string): Promise<string | undefined> {
-  // 1) Arquivo multipart (req.file)
+async function extractPhotoPath(req: any, currentPath?: string): Promise<string | undefined> {
   if (req.file?.filename) return req.file.filename;
 
-  // 2) Campo "photo" como texto:
-  //    - se já for um nome/caminho existente, manter
-  //    - se for data URL (base64), salvar em disco e retornar novo nome
   const photoField: unknown = req.body?.photo;
   if (typeof photoField === "string" && photoField.trim()) {
     const v = photoField.trim();
     if (/^data:image\/.*;base64,/.test(v)) {
-      return await saveDataUrlToFile(v);
+      return await uploadImageFromDataUrl(v);
     }
-    // Se já veio um nome/caminho, preservar (ex.: edição sem alterar foto)
     return v;
   }
-
-  // 3) Sem alteração de foto
-  return currentFilename;
+  return currentPath;
 }
 
 /* ============================
@@ -111,7 +66,7 @@ router.post("/", uploadProfessionalPhoto, async (req, res) => {
       return res.status(400).json({ error: "Nome, especialidade e clinicId são obrigatórios." });
     }
 
-    const filename = await extractPhotoFilename(req);
+    const filename = await extractPhotoPath(req);
 
     const { data: insertedArr, error: insertError } = await supabase
       .from("professionals")
@@ -184,7 +139,7 @@ router.put("/:id", uploadProfessionalPhoto, async (req, res) => {
       return res.status(404).json({ error: "Profissional não encontrado para esta clínica" });
     }
 
-    const filename = await extractPhotoFilename(req, found.photo || undefined);
+    const filename = await extractPhotoPath(req, found.photo || undefined);
 
     const payload: any = {
       name,
