@@ -224,7 +224,7 @@ export const createPatient = async (req: Request, res: Response) => {
 
   let photo: string | null = null;
   if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
+    photo = (req as any).file.filename;
   } else if (req.body.photo) {
     photo = req.body.photo;
   }
@@ -282,7 +282,7 @@ export const updatePatient = async (
   const { name, email, phone, birthdate, address, city, state, zipcode } = req.body;
   let photo = req.body.photo || null;
   if ((req as any).file) {
-    photo = `/uploads/${(req as any).file.filename}`;
+    photo = (req as any).file.filename;
   }
 
   const updatedFields: Partial<Patient> = {

@@ -263,7 +263,7 @@ export async function updateClinicSettings(
   // Se veio imagem de capa pelo Multer, sobrescreva
   if (files && files.coverImage && files.coverImage.length > 0) {
     const file = files.coverImage[0];
-    updateData.cover_image_url = `/uploads/${file.filename}`;
+    updateData.cover_image_url = file.filename;
   }
 
   // Se vieram imagens de galeria pelo Multer, adicione/concatene corretamente
@@ -278,7 +278,7 @@ export async function updateClinicSettings(
         currentGallery = [];
       }
     }
-    const newImages = files.galleryImages.map((file: any) => `/uploads/${file.filename}`);
+    const newImages = files.galleryImages.map((file: any) => file.filename);
     const finalGallery = [...currentGallery, ...newImages];
     updateData.gallery_image_urls = JSON.stringify(finalGallery);
   } else if (data.galleryUrls) {
