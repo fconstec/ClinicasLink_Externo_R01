@@ -58,8 +58,8 @@ function buildFromRaw(raw: string): string {
     const bucket = maybeBucket === DEFAULT_SUPABASE_BUCKET ? maybeBucket : DEFAULT_SUPABASE_BUCKET;
     if (SUPABASE_URL) {
       const pathWithoutBucket = maybeBucket === bucket ? parts.slice(1).join("/") : r;
-      const cleanPath = pathWithoutBucket.replace(/^\/+/, "");
-      return `${SUPABASE_URL.replace(/\/$/,"")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
+      const cleanPath = pathWithoutBucket.replace(/^\//, "");
+      return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
     }
   }
 
