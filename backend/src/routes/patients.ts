@@ -28,7 +28,7 @@ router.post(
       if (!req.file) {
         return res.status(400).json({ error: "Nenhum arquivo enviado." });
       }
-      const fileUrl = `/uploads/${req.file.filename}`;
+      const fileUrl = req.file.filename;
       res.json({ url: fileUrl, filename: req.file.filename });
     });
   }

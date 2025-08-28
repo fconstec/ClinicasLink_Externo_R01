@@ -151,7 +151,7 @@ export async function uploadProcedureImage(req: Request, res: Response) {
       return res.status(400).json({ error: "Nenhum arquivo enviado." });
     }
 
-    const fileUrl = `/uploads/${req.file.filename}`;
+    const fileUrl = req.file.filename;
 
     // Inserimos usando 'filename' (nome real da coluna no banco).
     const { data: imgArr, error } = await supabase

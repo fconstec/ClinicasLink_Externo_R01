@@ -1,11 +1,5 @@
 import type { Professional } from "@/components/ClinicAdminPanel_Managers/types";
-
-// Ajuste este helper conforme sua implementação real de resolver imagens
-export function resolveImageUrl(raw: string | undefined | null): string | undefined {
-  if (!raw) return undefined;
-  if (raw.startsWith("http")) return raw;
-  return `/uploads/${raw}`; // Exemplo
-}
+import { resolveImageUrl } from "@/utils/resolveImage";
 
 export function normalizeProfessional(raw: any): Professional {
   const id = Number(raw.id);
