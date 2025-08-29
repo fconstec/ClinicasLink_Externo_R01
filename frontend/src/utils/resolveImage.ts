@@ -2,15 +2,16 @@ import { fileUrl } from "@/api/apiBase";
 
 // URL do Supabase vinda do ambiente (CRA -> REACT_APP_*, Vite -> VITE_*)
 const SUPABASE_URL =
-  (typeof process !== "undefined" && process.env?.REACT_APP_SUPABASE_URL) ||
+  (typeof process !== "undefined" && (process.env as any)?.REACT_APP_SUPABASE_URL) ||
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) ||
   "";
 
-// Bucket padrão usado para armazenar imagens
+// Bucket real usado no seu projeto (deve existir no Supabase e ser público)
 const BUCKET = "uploads";
 
 /**
  * Resolve qualquer campo de imagem vindo do backend ou Storage.
+ * Aceita: File, data URL, caminho relativo, URL pública, etc.
  */
 export function resolveImageUrl(src: any): string {
   if (!src) return "";
@@ -54,22 +55,26 @@ function buildFromRaw(raw: string): string {
   if (SUPABASE_URL) {
     let bucket = BUCKET;
     let path = r;
+
+    // Se vier algo como "uploads/algum/caminho.png" ou outro bucket:
     const match = r.match(/^([^/]+)\/(.+)/);
     if (match) {
       const maybeBucket = match[1];
       const rest = match[2];
-      if (maybeBucket === BUCKET) {
+      if (maybeBucket === bucket) {
         path = rest;
       } else {
+        // Se vier prefixado com outro bucket, respeita esse bucket
         bucket = maybeBucket;
         path = rest;
       }
     }
+
     const cleanPath = path.replace(/^\//, "");
     return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
   }
 
-  // Fallback para caminhos locais (/uploads) durante desenvolvimento
+  // Fallbacks locais (dev)
   if (r.startsWith("/uploads/")) return fileUrl(r);
   if (r.startsWith("/")) return fileUrl(r);
   if (r.startsWith("uploads/")) return fileUrl("/" + r);
@@ -78,9 +83,7 @@ function buildFromRaw(raw: string): string {
   return fileUrl("/" + r);
 }
 
-/**
- * Auxiliar de debug (opcional)
- */
+/** Auxiliar de debug (opcional) */
 export function debugResolveImage(src: any) {
   return { original: src, resolved: resolveImageUrl(src) };
 }

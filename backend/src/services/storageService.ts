@@ -1,26 +1,35 @@
 import { supabase } from "../supabaseClient";
 import { randomUUID } from "crypto";
 
-// Bucket padrão para os uploads no Supabase. Pode ser sobrescrito via env.
+// Bucket do Storage. Mantenha igual ao criado no Supabase.
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "uploads";
 
-// Faz upload do buffer diretamente no Storage e retorna apenas o caminho
-// relativo dentro do bucket (ex: "img-123.png").
+/**
+ * Faz upload de um buffer para o Supabase Storage.
+ * Retorna apenas o caminho relativo salvo no bucket (ex.: "img-...uuid.png").
+ * Usa upsert:true para evitar conflito de nome.
+ */
 export async function uploadImageFromBuffer(buffer: Buffer, mime: string): Promise<string> {
   const ext = (() => {
-    const e = mime.split("/")[1] || "png";
-    return e === "jpeg" ? "jpg" : e;
+    const e = (mime || "").split("/")[1] || "png";
+    return e.toLowerCase() === "jpeg" ? "jpg" : e.toLowerCase();
   })();
+
   const fileName = `img-${Date.now()}-${randomUUID()}.${ext}`;
+
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(fileName, buffer, { contentType: mime, upsert: false });
+    .upload(fileName, buffer, { contentType: mime || "image/*", upsert: true });
+
   if (error) throw error;
-  // Retornamos somente o caminho relativo dentro do bucket
+
   return fileName;
 }
 
-// Aceita Data URL (base64) e delega para uploadImageFromBuffer
+/**
+ * Recebe uma data URL (base64) "data:image/...;base64,..." e faz upload.
+ * Retorna o caminho salvo no Storage.
+ */
 export async function uploadImageFromDataUrl(dataUrl: string): Promise<string> {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) throw new Error("Data URL inválida");
@@ -30,7 +39,10 @@ export async function uploadImageFromDataUrl(dataUrl: string): Promise<string> {
   return uploadImageFromBuffer(buf, mime);
 }
 
-// Remove imagem do Storage. Suporta caminhos com ou sem nome do bucket.
+/**
+ * Remove uma imagem do bucket, recebendo um path relativo.
+ * (Compatível com valores que venham com "uploads/<path>" ou apenas "<path>")
+ */
 export async function removeImage(path: string): Promise<void> {
   if (!path) return;
 
