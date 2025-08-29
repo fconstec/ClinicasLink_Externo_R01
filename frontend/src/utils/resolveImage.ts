@@ -1,23 +1,27 @@
 import { fileUrl } from "@/api/apiBase";
 
-// URL do Supabase vinda do ambiente (CRA -> REACT_APP_*, Vite -> VITE_*)
+// URL do Supabase do ambiente (CRA -> REACT_APP_*, Vite -> VITE_*)
 const SUPABASE_URL =
   (typeof process !== "undefined" && (process.env as any)?.REACT_APP_SUPABASE_URL) ||
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) ||
   "";
 
-// Bucket real usado no seu projeto (deve existir no Supabase e ser público)
+// Bucket padrão
 const BUCKET = "uploads";
 
 /**
- * Resolve qualquer campo de imagem vindo do backend ou Storage.
- * Aceita: File, data URL, caminho relativo, URL pública, etc.
+ * Converte qualquer valor (string/obj/File) em uma URL exibível.
  */
 export function resolveImageUrl(src: any): string {
   if (!src) return "";
+
+  // Pré-visualização local de File
   if (src instanceof File) return URL.createObjectURL(src);
+
+  // String direta
   if (typeof src === "string") return buildFromRaw(src);
 
+  // Tenta campos comuns vindos do backend
   const candidates = [
     src.url,
     src.fileUrl,
@@ -40,50 +44,42 @@ export function resolveImageUrl(src: any): string {
 }
 
 function buildFromRaw(raw: string): string {
-  const r = (raw || "").trim();
+  let r = (raw || "").trim();
   if (!r) return "";
 
-  // Já é uma URL válida
+  // já é URL completa
   if (/^(https?:|data:|blob:)/i.test(r)) return r;
 
-  // Já é uma URL pública do Supabase Storage
-  if (/\/storage\/v1\/object\/public\//i.test(r)) {
-    return r;
-  }
-
-  // Monta a URL pública a partir de um caminho salvo no banco
+  // Se temos SUPABASE_URL, sempre priorize ela
   if (SUPABASE_URL) {
+    // normaliza: remove “/” inicial e “uploads/” duplicado
+    r = r.replace(/^\/+/, "");
+    r = r.replace(/^uploads\//, "");
+
+    // Detecta bucket explícito (ex.: "avatars/arquivo.png")
     let bucket = BUCKET;
     let path = r;
-
-    // Se vier algo como "uploads/algum/caminho.png" ou outro bucket:
-    const match = r.match(/^([^/]+)\/(.+)/);
-    if (match) {
-      const maybeBucket = match[1];
-      const rest = match[2];
-      if (maybeBucket === bucket) {
-        path = rest;
-      } else {
-        // Se vier prefixado com outro bucket, respeita esse bucket
+    const m = r.match(/^([^/]+)\/(.+)/);
+    if (m) {
+      const maybeBucket = m[1];
+      const rest = m[2];
+      // Se veio com "avatars/..." ou "uploads/..." usa esse bucket
+      if (["uploads", "avatars"].includes(maybeBucket)) {
         bucket = maybeBucket;
         path = rest;
       }
     }
 
-    const cleanPath = path.replace(/^\//, "");
-    return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
+    const base = SUPABASE_URL.replace(/\/+$/, "");
+    return `${base}/storage/v1/object/public/${bucket}/${encodeURI(path)}`;
   }
 
-  // Fallbacks locais (dev)
-  if (r.startsWith("/uploads/")) return fileUrl(r);
+  // Fallback DEV: serve pelo backend local
   if (r.startsWith("/")) return fileUrl(r);
-  if (r.startsWith("uploads/")) return fileUrl("/" + r);
-  if (/\.[a-z0-9]{2,5}($|\?)/i.test(r)) return fileUrl("/uploads/" + r);
-
   return fileUrl("/" + r);
 }
 
-/** Auxiliar de debug (opcional) */
+// Auxiliar de debug (opcional)
 export function debugResolveImage(src: any) {
   return { original: src, resolved: resolveImageUrl(src) };
 }
