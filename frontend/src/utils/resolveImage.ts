@@ -6,12 +6,11 @@ const SUPABASE_URL =
   (typeof process !== "undefined" && process.env?.REACT_APP_SUPABASE_URL) ||
   "";
 
-// Default bucket que decidimos usar (mude se o seu bucket tiver outro nome)
+// Bucket padrão usado pela aplicação
 const DEFAULT_SUPABASE_BUCKET = "avatars";
 
 /**
- * Resolve qualquer campo de imagem vindo do backend ou Supabase Storage.
- * Para fotos salvas pelo backend local, use /uploads/<nome>.
+ * Resolve qualquer campo de imagem vindo do backend ou Storage.
  */
 export function resolveImageUrl(src: any): string {
   if (!src) return "";
@@ -43,7 +42,7 @@ function buildFromRaw(raw: string): string {
   const r = (raw || "").trim();
   if (!r) return "";
 
-  // Já é uma URL válida (http(s), data, blob)
+  // Já é uma URL válida
   if (/^(https?:|data:|blob:)/i.test(r)) return r;
 
   // Já é uma URL pública do Supabase Storage
@@ -51,29 +50,22 @@ function buildFromRaw(raw: string): string {
     return r;
   }
 
-  // Se parece com um path de supabase "bucket/path/to/file" ou "avatars/..."
+  // Se parece com um path de Supabase "bucket/path/to/file"
   if (/^[a-z0-9_-]+\/.+/i.test(r)) {
     const parts = r.split("/");
-    const maybeBucket = parts[0];
-    const bucket = maybeBucket === DEFAULT_SUPABASE_BUCKET ? maybeBucket : DEFAULT_SUPABASE_BUCKET;
+    const bucket = parts[0] || DEFAULT_SUPABASE_BUCKET;
+    const path = parts.slice(1).join("/");
     if (SUPABASE_URL) {
-      const pathWithoutBucket = maybeBucket === bucket ? parts.slice(1).join("/") : r;
-      const cleanPath = pathWithoutBucket.replace(/^\//, "");
-      return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
+      return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(path)}`;
     }
   }
 
-  // Backend local: /uploads/arquivo.png
+  // Backend local: /uploads/arquivo.png ou caminhos relativos
   if (r.startsWith("/uploads/")) return fileUrl(r);
   if (r.startsWith("/")) return fileUrl(r);
-
-  // Caminho relativo indicando uploads
   if (r.startsWith("uploads/")) return fileUrl("/" + r);
-
-  // Nome simples com extensão -> /uploads/filename
   if (/\.[a-z0-9]{2,5}($|\?)/i.test(r)) return fileUrl("/uploads/" + r);
 
-  // Último fallback
   return fileUrl("/" + r);
 }
 

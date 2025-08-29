@@ -1,8 +1,11 @@
 import { supabase } from "../supabaseClient";
 import { randomUUID } from "crypto";
 
-const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "avatars";
+// Bucket padrão para todos os uploads. Pode ser sobrescrito via env.
+const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "uploads";
 
+// Faz upload do buffer diretamente no Storage e retorna apenas o caminho
+// relativo dentro do bucket (ex: "img-123.png").
 export async function uploadImageFromBuffer(buffer: Buffer, mime: string): Promise<string> {
   const ext = (() => {
     const e = mime.split("/")[1] || "png";
@@ -14,9 +17,11 @@ export async function uploadImageFromBuffer(buffer: Buffer, mime: string): Promi
     upsert: false,
   });
   if (error) throw error;
-  return `${BUCKET}/${fileName}`;
+  // retornamos somente o caminho, sem o nome do bucket
+  return fileName;
 }
 
+// Aceita Data URL (base64) e delega para uploadImageFromBuffer
 export async function uploadImageFromDataUrl(dataUrl: string): Promise<string> {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) throw new Error("Data URL inválida");
@@ -26,9 +31,20 @@ export async function uploadImageFromDataUrl(dataUrl: string): Promise<string> {
   return uploadImageFromBuffer(buf, mime);
 }
 
+// Remove imagem do Storage. Suporta caminhos com ou sem nome do bucket.
 export async function removeImage(path: string): Promise<void> {
-  const [bucket, ...rest] = path.split("/");
-  const filePath = rest.join("/");
-  if (!bucket || !filePath) return;
+  if (!path) return;
+
+  let bucket = BUCKET;
+  let filePath = path;
+
+  const parts = path.split("/");
+  if (parts.length > 1) {
+    // se vier no formato "bucket/arquivo" ou "bucket/pasta/arquivo"
+    bucket = parts[0];
+    filePath = parts.slice(1).join("/");
+  }
+
+  if (!filePath) return;
   await supabase.storage.from(bucket).remove([filePath]);
 }

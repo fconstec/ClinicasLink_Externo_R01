@@ -1,9 +1,9 @@
 import { buildApiUrl, defaultJsonHeaders } from "./apiPrefix";
-import { API_BASE_URL } from "./apiBase";
 import type {
   Professional,
   NewProfessionalData,
 } from "../components/ClinicAdminPanel_Managers/types";
+import { normalizeProfessional } from "@/utils/normalizeProfessional";
 
 /* ============================================================
  * Helpers
@@ -30,53 +30,10 @@ function sTrim(val: unknown): string {
 }
 
 /**
- * Monta URL absoluta para a imagem:
- * - Se já for http(s) ou data:, retorna como está.
- * - Caso contrário, garante /uploads/<arquivo> no domínio do backend (API_BASE_URL).
- */
-function resolveImageUrl(raw: string | undefined | null): string | undefined {
-  const v = sTrim(raw);
-  if (!v) return undefined;
-  if (/^(https?:|data:)/i.test(v)) return v;
-
-  // photo = nome do arquivo salvo, ex: photo-xxxx.png
-  return `${API_BASE_URL.replace(/\/+$/, "")}/uploads/${v.replace(/^\/+/, "")}`;
-}
-
-/**
  * Normaliza objeto cru vindo da API para Professional.
  */
 function mapProfessional(raw: any): Professional {
-  const clinicIdRaw = raw?.clinic_id ?? raw?.clinicId ?? 0;
-  const active = raw?.active === false ? false : true;
-  const name = sTrim(raw?.name);
-
-  return {
-    id: Number(raw?.id),
-    name,
-    specialty: sTrim(raw?.specialty ?? raw?.speciality),
-    photo: raw?.photo ? String(raw.photo) : "",
-    available: toBool(raw?.available ?? raw?.isAvailable ?? true),
-    clinic_id: Number(clinicIdRaw),
-    clinicId: Number(clinicIdRaw),
-
-    email: raw?.email != null ? String(raw.email) : "",
-    phone: raw?.phone != null ? String(raw.phone) : "",
-    resume: raw?.resume != null ? String(raw.resume) : "",
-    color: raw?.color != null ? String(raw.color) : "",
-
-    active,
-    deleted_at: raw?.deleted_at ?? null,
-    created_at: raw?.created_at,
-    updated_at: raw?.updated_at,
-    createdAt: raw?.createdAt ?? raw?.created_at,
-    updatedAt: raw?.updatedAt ?? raw?.updated_at,
-
-    // Campos auxiliares usados no card
-    isInactive: active === false || !!raw?.deleted_at,
-    photoUrl: raw?.photo ? resolveImageUrl(raw?.photo) : undefined,
-    displayName: active === false ? `${name} (Inativo)` : name,
-  } as Professional;
+  return normalizeProfessional(raw);
 }
 
 async function parseBody(res: Response): Promise<any> {
