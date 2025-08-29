@@ -1,22 +1,18 @@
-import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 
+/**
+ * Use SEMPRE a SERVICE ROLE KEY no backend (Railway).
+ * Ela ignora RLS e tem permissão de upload no Storage.
+ * NUNCA expor esta key no frontend.
+ */
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // recomendado
-const SUPABASE_ANON_OR_SERVICE_IN_KEY = process.env.SUPABASE_KEY;        // fallback
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL) {
-  console.error("Config error: SUPABASE_URL is not set");
+  throw new Error("SUPABASE_URL não definida no backend (Railway).");
 }
-if (!SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_ANON_OR_SERVICE_IN_KEY) {
-  console.error("Config error: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY must be set");
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY não definida no backend (Railway).");
 }
 
-const USING = SUPABASE_SERVICE_ROLE_KEY ? "service_role (SUPABASE_SERVICE_ROLE_KEY)" : "fallback (SUPABASE_KEY)";
-console.log(`[supabase] Using ${USING}`);
-console.log(`[supabase] URL set: ${!!SUPABASE_URL}`);
-
-export const supabase = createClient(
-  SUPABASE_URL ?? "",
-  (SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_OR_SERVICE_IN_KEY || "")
-);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

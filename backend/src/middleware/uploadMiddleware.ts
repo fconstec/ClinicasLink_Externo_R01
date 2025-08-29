@@ -78,9 +78,8 @@ function createSingleUploader(field: string) {
 }
 
 /**
- * Aceita:
- *  - multipart/form-data com múltiplos campos (ex.: coverImage, galleryImages)
- * Faz upload de cada arquivo encontrado e preenche file.filename
+ * Aceita múltiplos campos (ex.: coverImage, galleryImages)
+ * Faz upload de cada arquivo e preenche file.filename
  */
 function createFieldsUploader(fields: multer.Field[]) {
   return (req: Request, res: Response, next: NextFunction) => {
