@@ -1,7 +1,7 @@
 import { supabase } from "../supabaseClient";
 import { randomUUID } from "crypto";
 
-// Bucket padrão para todos os uploads. Pode ser sobrescrito via env.
+// Bucket padrão para os uploads no Supabase. Pode ser sobrescrito via env.
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "uploads";
 
 // Faz upload do buffer diretamente no Storage e retorna apenas o caminho
@@ -12,12 +12,11 @@ export async function uploadImageFromBuffer(buffer: Buffer, mime: string): Promi
     return e === "jpeg" ? "jpg" : e;
   })();
   const fileName = `img-${Date.now()}-${randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(fileName, buffer, {
-    contentType: mime,
-    upsert: false,
-  });
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(fileName, buffer, { contentType: mime, upsert: false });
   if (error) throw error;
-  // retornamos somente o caminho, sem o nome do bucket
+  // Retornamos somente o caminho relativo dentro do bucket
   return fileName;
 }
 
@@ -40,9 +39,14 @@ export async function removeImage(path: string): Promise<void> {
 
   const parts = path.split("/");
   if (parts.length > 1) {
-    // se vier no formato "bucket/arquivo" ou "bucket/pasta/arquivo"
-    bucket = parts[0];
-    filePath = parts.slice(1).join("/");
+    const maybeBucket = parts[0];
+    const rest = parts.slice(1).join("/");
+    if (maybeBucket === BUCKET) {
+      filePath = rest;
+    } else if (rest) {
+      bucket = maybeBucket;
+      filePath = rest;
+    }
   }
 
   if (!filePath) return;

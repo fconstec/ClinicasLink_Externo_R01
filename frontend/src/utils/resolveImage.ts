@@ -1,13 +1,13 @@
 import { fileUrl } from "@/api/apiBase";
 
-// Obter SUPABASE_URL da env (Vite ou CRA)
+// URL do Supabase vinda do ambiente (CRA -> REACT_APP_*, Vite -> VITE_*)
 const SUPABASE_URL =
-  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) ||
   (typeof process !== "undefined" && process.env?.REACT_APP_SUPABASE_URL) ||
+  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) ||
   "";
 
-// Bucket padrão usado pela aplicação
-const DEFAULT_SUPABASE_BUCKET = "avatars";
+// Bucket padrão usado para armazenar imagens
+const BUCKET = "uploads";
 
 /**
  * Resolve qualquer campo de imagem vindo do backend ou Storage.
@@ -50,17 +50,26 @@ function buildFromRaw(raw: string): string {
     return r;
   }
 
-  // Se parece com um path de Supabase "bucket/path/to/file"
-  if (/^[a-z0-9_-]+\/.+/i.test(r)) {
-    const parts = r.split("/");
-    const bucket = parts[0] || DEFAULT_SUPABASE_BUCKET;
-    const path = parts.slice(1).join("/");
-    if (SUPABASE_URL) {
-      return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(path)}`;
+  // Monta a URL pública a partir de um caminho salvo no banco
+  if (SUPABASE_URL) {
+    let bucket = BUCKET;
+    let path = r;
+    const match = r.match(/^([^/]+)\/(.+)/);
+    if (match) {
+      const maybeBucket = match[1];
+      const rest = match[2];
+      if (maybeBucket === BUCKET) {
+        path = rest;
+      } else {
+        bucket = maybeBucket;
+        path = rest;
+      }
     }
+    const cleanPath = path.replace(/^\//, "");
+    return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${encodeURI(cleanPath)}`;
   }
 
-  // Backend local: /uploads/arquivo.png ou caminhos relativos
+  // Fallback para caminhos locais (/uploads) durante desenvolvimento
   if (r.startsWith("/uploads/")) return fileUrl(r);
   if (r.startsWith("/")) return fileUrl(r);
   if (r.startsWith("uploads/")) return fileUrl("/" + r);
